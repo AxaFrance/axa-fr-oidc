@@ -27,9 +27,7 @@ jobs:
       - name: Build wheel & sdist
         run: uv build
 
-# Replace when ready to upload to PyPI
-#
-#      - name: Publish to PyPI
-#        run: uv publish
-#        env:
-#          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Publish to PyPI
+        run: uv publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
