@@ -1,0 +1,209 @@
+[project]
+name = "axa-fr-oidc"
+version = "1.3.0"
+description = "Python library for OpenID Connect (OIDC) authentication with DPoP (Demonstrating Proof-of-Possession) support, featuring JWT validation, token caching, and both sync/async operations."
+authors = [
+    {name = "Cop Python"}
+]
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+keywords = [
+    "oidc",
+    "openid-connect",
+    "authentication",
+    "oauth2",
+    "jwt",
+    "dpop",
+    "token-validation",
+    "async",
+]
+
+dependencies = [
+    "httpx>=0.28.1,<1.0.0",
+    "jwskate>=0.12.2,<1.0.0",
+    "pyjwt>=2.10.1,<3.0.0",
+    "requests-oauth2client>=1.8.0,<2.0.0",
+    "loguru>=0.7.3,<1.0.0",
+]
+
+[tool.uv]
+package = true
+
+# ============================================================================
+# Development Dependencies
+# ============================================================================
+
+[dependency-groups]
+dev = [
+    {include-group = "test"},
+    {include-group = "lint"},
+    {include-group = "type-check"},
+    {include-group = "build"},
+]
+
+test = [
+    {include-group = "security"},
+    "pytest>=9.0.0,<10.0.0",
+    "pytest-sugar>=1.0.0,<2.0.0",
+    "pytest-mock>=3.0.0,<4.0.0",
+    "pytest-asyncio>=1.0.0,<2.0.0",
+    "pytest-cov>=7.0.0,<8.0.0",
+]
+
+quality = [
+    {include-group = "lint"},
+    {include-group = "type-check"},
+    {include-group = "security"},
+]
+
+lint = [
+    "ruff>=0.8.0,<1.0.0",
+]
+
+type-check = [
+    "mypy>=1.19.1",
+]
+
+security = [
+    "pip-audit>=2.0.0,<3.0.0",
+    "bandit>=1.7.0,<2.0.0",
+]
+
+build = [
+    "pytest-azurepipelines>=1.0.5,<2.0.0",
+    "twine>=6.0.0,<7.0.0",
+]
+
+# ============================================================================
+# Build System
+# ============================================================================
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.sdist]
+include = ["src/axa_fr_oidc"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/axa_fr_oidc"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/axa_fr_oidc" = "axa_fr_oidc"
+
+# ============================================================================
+# Testing Configuration
+# ============================================================================
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = [
+    "--import-mode=importlib",
+    "-W", "ignore",
+    "-s",
+    "--tb=short",
+    "--cov=src",
+    "--cov-report=html:htmlcov",
+    "--cov-report=xml:coverage-unittests.xml",
+    "--cov-report=term-missing",
+    "--cov-fail-under=95",
+]
+
+# ============================================================================
+# Linting & Formatting Configuration
+# ============================================================================
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "C90",    # mccabe complexity
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific rules
+    "S",      # flake8-bandit (security)
+    "RET",    # flake8-return
+    "PIE",    # flake8-pie (misc lints)
+    "PLC",    # pylint convention
+    "PLE",    # pylint error
+    "PLW",    # pylint warning
+    "PERF",   # perflint (performance)
+    "FURB",   # refurb (modernize code)
+    "D",      # pydocstyle (docstrings)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"  # Use Google docstring convention
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S", "D"]  # Ignore bandit security and docstring rules in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["axa_fr_oidc"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+# ============================================================================
+# Type Checking Configuration
+# ============================================================================
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_any_unimported = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+check_untyped_defs = true
+strict_equality = true
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = [
+    "requests_oauth2client.*",
+    "jwskate.*",
+    "loguru.*",
+    "httpx.*",
+    "jwt.*",
+    "requests.*",
+]
+ignore_missing_imports = true
+
+
+# ============================================================================
+# Security Check Configuration
+# ============================================================================
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = ["B101"]  # skip assert warnings (used in tests)
