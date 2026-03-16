@@ -84,6 +84,7 @@ class OidcClient:
         proxy: str | None = None,
         verify: bool = True,
         timeout: float | None = None,
+        token_endpoint: str | None = None,
     ) -> None:
         """Initialize the OIDC client.
 
@@ -120,6 +121,9 @@ class OidcClient:
             verify: Whether to verify SSL certificates. Defaults to True.
             timeout: Timeout in seconds for HTTP requests. Defaults to None
                 (no timeout).
+            token_endpoint: Explicit token endpoint URL. When provided, skips
+                OIDC discovery for the token endpoint. Defaults to None
+                (auto-discover from issuer).
         """
         self.issuer = issuer
         self.client_id = client_id
@@ -133,6 +137,7 @@ class OidcClient:
         self.proxy = proxy
         self.verify = verify
         self.timeout = timeout
+        self.token_endpoint = token_endpoint
 
         # Lazy initialization for HTTP clients
         self._http_client: Client | None = None
@@ -194,6 +199,7 @@ class OidcClient:
                 service=self.http_service,
                 memory_cache=self.memory_cache,
                 algorithms=self.algorithms,
+                token_endpoint=self.token_endpoint,
             )
         return self._authentication
 
@@ -222,6 +228,23 @@ class OidcClient:
                 auth_method=self.auth_method,
             )
         return self._openid_connect
+
+    def get_access_token_raw(self) -> str:
+        """Get an access token without validating it after retrieval.
+
+        Unlike ``get_access_token()``, this method does not validate the
+        token after fetching. This is useful for token creator scenarios
+        where the caller only needs the raw token string and validation
+        is handled separately (e.g., by a token inspector).
+
+        Returns:
+            The access token string.
+
+        Raises:
+            ValueError: If neither client_secret nor private_key is provided.
+            HTTPError: If the token request fails.
+        """
+        return self.openid_connect.get_access_token_raw()
 
     def get_access_token(self) -> str | None:
         """Get an access token synchronously.
@@ -275,6 +298,7 @@ class OidcClient:
         dpop: str | None = None,
         path: str | None = None,
         http_method: str | None = None,
+        audience: str | None = None,
     ) -> AuthenticationResult:
         """Validate an access token synchronously.
 
@@ -286,6 +310,10 @@ class OidcClient:
             dpop: The DPoP proof JWT for DPoP-bound tokens, or None.
             path: The request path for DPoP validation.
             http_method: The HTTP method for DPoP validation.
+            audience: Override the audience for this validation call.
+                If provided, takes precedence over the audience set at
+                construction time. If None, falls back to the constructor
+                audience (which may also be None to skip audience validation).
 
         Returns:
             AuthenticationResult indicating success or failure with details.
@@ -297,6 +325,13 @@ class OidcClient:
             ... else:
             ...     print(f"Invalid: {result.error}")
         """
+        if audience is not None:
+            original_audience = self.authentication.api_audience
+            self.authentication.api_audience = audience
+            try:
+                return self.authentication.validate(token, dpop, path, http_method)
+            finally:
+                self.authentication.api_audience = original_audience
         return self.authentication.validate(token, dpop, path, http_method)
 
     async def validate_token_async(
