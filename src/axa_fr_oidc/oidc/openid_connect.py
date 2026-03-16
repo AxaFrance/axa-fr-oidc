@@ -391,6 +391,35 @@ class OpenIdConnect(IOpenIdConnect):
 
         return None
 
+    def get_access_token_raw(self) -> str:
+        """Get an access token without post-fetch validation.
+
+        Returns:
+            The access token string.
+
+        Raises:
+            HTTPError: If the token request fails.
+        """
+        token_endpoint = self.authentication.get_token_endpoint()
+
+        if self.private_key is not None:
+            return _get_private_key_access_token(
+                token_endpoint,
+                self.client_id,
+                self.private_key,
+                self.authentication.get_scopes(),
+                self.algorithm,
+            )
+        if self.client_secret is not None:
+            return _get_client_secret_access_token(
+                token_endpoint,
+                self.client_id,
+                self.client_secret,
+                self.authentication.get_scopes(),
+                auth_method=self.auth_method,
+            )
+        raise ValueError("Either client_secret or private_key must be provided.")
+
     def get_access_token(self) -> str | None:
         """Get an access token synchronously.
 
