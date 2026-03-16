@@ -4,7 +4,7 @@ import pytest
 from requests_oauth2client import BearerToken
 
 from axa_fr_oidc.client import OidcClient
-from axa_fr_oidc.constants import DEFAULT_JWT_ALGORITHM, SUPPORTED_ALGORITHMS
+from axa_fr_oidc.constants import DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS, DEFAULT_JWT_ALGORITHM, SUPPORTED_ALGORITHMS
 from axa_fr_oidc.http_service import IHttpServiceGet
 from axa_fr_oidc.memory_cache import IMemoryCache, MemoryCache
 from axa_fr_oidc.oidc import AuthenticationResult
@@ -146,6 +146,27 @@ class TestOidcClientInitialization:
         assert client.verify is False
         assert client.timeout == 15.0
 
+    def test_init_default_issuer_cache_expiration(self):
+        """Test that issuer_cache_expiration_seconds defaults to DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS."""
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+        )
+
+        assert client.issuer_cache_expiration_seconds == DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS
+
+    def test_init_custom_issuer_cache_expiration(self):
+        """Test initialization with custom issuer_cache_expiration_seconds."""
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+            issuer_cache_expiration_seconds=7200,
+        )
+
+        assert client.issuer_cache_expiration_seconds == 7200
+
 
 class TestOidcClientProperties:
     """Tests for OidcClient lazy-loaded properties."""
@@ -209,6 +230,19 @@ class TestOidcClientProperties:
 
         # Second access returns same instance
         assert client.authentication is auth
+
+    def test_authentication_receives_issuer_cache_expiration(self):
+        """Test that issuer_cache_expiration_seconds is propagated to OidcAuthentication."""
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+            http_service=FakeHttpService(),
+            issuer_cache_expiration_seconds=7200,
+        )
+
+        auth = client.authentication
+        assert auth.issuer_cache_expiration_seconds == 7200
 
     def test_openid_connect_lazy_creation(self):
         """Test that OpenID Connect client is lazily created."""
@@ -303,7 +337,27 @@ class TestOidcClientTokenOperations:
         token = client.get_access_token()
 
         assert token == "test-access-token"
-        mock_openid_connect.get_access_token.assert_called_once()
+        mock_openid_connect.get_access_token.assert_called_once_with(False)
+
+    def test_get_access_token_force_refresh(self, mocker):
+        """Test getting access token with force_renew_token=True."""
+        mock_openid_connect = mocker.Mock()
+        mock_openid_connect.get_access_token.return_value = "fresh-token"
+
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+            http_service=FakeHttpService(),
+        )
+
+        # Inject mock OpenIdConnect
+        client._openid_connect = mock_openid_connect
+
+        token = client.get_access_token(force_renew_token=True)
+
+        assert token == "fresh-token"
+        mock_openid_connect.get_access_token.assert_called_once_with(True)
 
     @pytest.mark.asyncio
     async def test_get_access_token_async(self, mocker):
@@ -324,7 +378,28 @@ class TestOidcClientTokenOperations:
         token = await client.get_access_token_async()
 
         assert token == "test-access-token-async"
-        mock_openid_connect.get_access_token_async.assert_called_once()
+        mock_openid_connect.get_access_token_async.assert_called_once_with(False)
+
+    @pytest.mark.asyncio
+    async def test_get_access_token_async_force_refresh(self, mocker):
+        """Test getting access token asynchronously with force_renew_token=True."""
+        mock_openid_connect = mocker.Mock()
+        mock_openid_connect.get_access_token_async = mocker.AsyncMock(return_value="fresh-async-token")
+
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+            http_service=FakeHttpService(),
+        )
+
+        # Inject mock OpenIdConnect
+        client._openid_connect = mock_openid_connect
+
+        token = await client.get_access_token_async(force_renew_token=True)
+
+        assert token == "fresh-async-token"
+        mock_openid_connect.get_access_token_async.assert_called_once_with(True)
 
     def test_get_access_token_raises_without_credentials(self):
         """Test that get_access_token raises error without credentials."""

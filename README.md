@@ -10,6 +10,46 @@
 
 A Python library for OpenID Connect (OIDC) authentication with DPoP (Demonstrating Proof-of-Possession) support, featuring JWT validation, token caching, and both sync/async operations.
 
+## Table of Contents (ToC)
+
+- [Table of Contents (ToC)](#table-of-contents-toc)
+- [Features](#features)
+- [Installation](#installation)
+  - [Using uv (recommended)](#using-uv-recommended)
+  - [Using pip](#using-pip)
+- [Quick Start](#quick-start)
+  - [Simple Usage with OidcClient (Recommended)](#simple-usage-with-oidcclient-recommended)
+    - [Using Context Managers](#using-context-managers)
+    - [Async Operations](#async-operations)
+    - [Private Key Authentication](#private-key-authentication)
+    - [Validating DPoP Tokens](#validating-dpop-tokens)
+    - [Token Exchange](#token-exchange)
+    - [Custom HTTP Configuration (Proxies, SSL, Timeouts)](#custom-http-configuration-proxies-ssl-timeouts)
+    - [Client Secret Authentication Methods](#client-secret-authentication-methods)
+  - [Extract Properties from a JWT Token](#extract-properties-from-a-jwt-token)
+- [Advanced Usage (Low-Level API)](#advanced-usage-low-level-api)
+  - [Using OpenIdConnect and OidcAuthentication Directly](#using-openidconnect-and-oidcauthentication-directly)
+  - [Async Operations with Low-Level API](#async-operations-with-low-level-api)
+  - [Using Private Key Authentication (Low-Level)](#using-private-key-authentication-low-level)
+  - [Custom Configuration](#custom-configuration)
+    - [Using OidcClient](#using-oidcclient)
+    - [Using Low-Level API](#using-low-level-api)
+- [API Reference](#api-reference)
+  - [High-Level Client (Recommended)](#high-level-client-recommended)
+  - [Low-Level Classes](#low-level-classes)
+  - [Interfaces](#interfaces)
+  - [Constants](#constants)
+- [Advanced Configuration](#advanced-configuration)
+  - [Client Secret Authentication Methods](#client-secret-authentication-methods-1)
+  - [Proxy, SSL, and Timeout Configuration](#proxy-ssl-and-timeout-configuration)
+- [Development](#development)
+  - [Setup Development Environment](#setup-development-environment)
+  - [Using the Makefile](#using-the-makefile)
+  - [Running Tests](#running-tests)
+  - [Running Quality Checks](#running-quality-checks)
+  - [Installing Specific Dependency Groups](#installing-specific-dependency-groups)
+- [Contributing](#contributing)
+
 ## Features
 
 - 🔐 **OIDC Authentication** - Full OpenID Connect authentication support
@@ -54,6 +94,9 @@ client = OidcClient(
 
 # Get an access token (automatically cached and refreshed)
 access_token = client.get_access_token()
+
+# Force a fresh token from the authorization server (bypasses cache)
+fresh_token = client.get_access_token(force_renew_token=True)
 
 # Validate a token
 result = client.validate_token(access_token)
@@ -268,6 +311,7 @@ token = client.get_access_token()
 
 For more details, see the [Client Secret Auth Methods Guide](./docs/client-secret-auth-methods.md).
 
+
 ### Extract Properties from a JWT Token
 
 ```python
@@ -312,7 +356,6 @@ auth = OidcAuthentication(
     service=http_service,
     memory_cache=memory_cache,
     algorithms=["RS256", "ES256"],
-    cache_expiration=7200,  # Cache JWKS for 2 hours
 )
 
 # Create OpenID Connect client
@@ -429,7 +472,7 @@ client = OidcClient(
     scopes=["openid", "profile"],
     audience="your-api-audience",
     algorithms=["RS256", "ES256"],  # Allowed algorithms for validation
-    cache_expiration=7200,  # Cache JWKS for 2 hours (default: 24 hours)
+    issuer_cache_expiration_seconds=7200,  # Cache JWKS and token_endpoint for 2 hours (default: 3600)
 )
 ```
 
@@ -453,7 +496,6 @@ auth = OidcAuthentication(
     ),
     memory_cache=MemoryCache(),
     algorithms=["RS256", "ES256"],  # Supported algorithms
-    cache_expiration=7200,  # Cache JWKS for 2 hours (default: 24 hours)
 )
 ```
 
@@ -462,7 +504,7 @@ auth = OidcAuthentication(
 ### High-Level Client (Recommended)
 
 - **`OidcClient`** - Simplified, all-in-one client for OIDC operations
-  - `get_access_token()` / `get_access_token_async()` - Get an access token
+  - `get_access_token(force_renew_token=False)` / `get_access_token_async(force_renew_token=False)` - Get an access token (set `force_renew_token=True` to bypass cache)
   - `validate_token()` / `validate_token_async()` - Validate an access token
   - `token_exchange()` - Exchange tokens (RFC 8693)
   - `get_token_endpoint()` / `get_token_endpoint_async()` - Get the token endpoint URL
@@ -495,7 +537,6 @@ The library exports useful constants for configuration:
 
 ```python
 from axa_fr_oidc import (
-    DEFAULT_CACHE_EXPIRATION_SECONDS,  # 86400 (24 hours)
     DEFAULT_DPOP_MAX_AGE_SECONDS,      # 300 (5 minutes)
     DEFAULT_CLOCK_SKEW_SECONDS,        # 300 (5 minutes)
     DEFAULT_JTI_LIFETIME_SECONDS,      # 300 (5 minutes)

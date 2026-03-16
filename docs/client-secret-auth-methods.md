@@ -57,7 +57,7 @@ the extra JWT round-trip:
 
 ```python
 from axa_fr_oidc import OidcClient
-from axa_fr_oidc.constants import CLIENT_SECRET_AUTH_METHOD_POST
+from axa_fr_oidc import CLIENT_SECRET_AUTH_METHOD_POST
 
 client = OidcClient(
     issuer="https://auth.example.com",
@@ -75,7 +75,7 @@ Use this when the server requires credentials in an HTTP Basic Auth header:
 
 ```python
 from axa_fr_oidc import OidcClient
-from axa_fr_oidc.constants import CLIENT_SECRET_AUTH_METHOD_BASIC
+from axa_fr_oidc import CLIENT_SECRET_AUTH_METHOD_BASIC
 
 client = OidcClient(
     issuer="https://auth.example.com",
@@ -87,14 +87,13 @@ client = OidcClient(
 token = client.get_access_token()
 ```
 
-### Explicit client_secret_jwt (no fallback)
+### Explicit client_secret_jwt
 
-Use this when you are certain the server supports `client_secret_jwt` and you want
-strict behaviour (raise immediately on failure instead of retrying):
+Use this when you are certain the server supports `client_secret_jwt`:
 
 ```python
 from axa_fr_oidc import OidcClient
-from axa_fr_oidc.constants import CLIENT_SECRET_AUTH_METHOD_JWT
+from axa_fr_oidc import CLIENT_SECRET_AUTH_METHOD_JWT
 
 client = OidcClient(
     issuer="https://auth.example.com",
@@ -106,18 +105,16 @@ client = OidcClient(
 token = client.get_access_token()
 ```
 
-> **Note:** Even when `CLIENT_SECRET_AUTH_METHOD_JWT` is set explicitly as the
-> default value, the automatic fallback to `client_secret_post` on a 401 is still
-> active. The fallback only triggers on a 401 — any other HTTP error is raised
-> immediately.
+> **Note:** Even when `CLIENT_SECRET_AUTH_METHOD_JWT` is set explicitly, the
+> automatic fallback to `client_secret_post` on a 401 is still active. The fallback
+> only triggers on a 401 — any other HTTP error is raised immediately.
 
 ## Low-Level API
 
 The `auth_method` parameter is also available on `OpenIdConnect` directly:
 
 ```python
-from axa_fr_oidc import OidcAuthentication, OpenIdConnect, MemoryCache, XHttpServiceGet
-from axa_fr_oidc.constants import CLIENT_SECRET_AUTH_METHOD_POST
+from axa_fr_oidc import OidcAuthentication, OpenIdConnect, MemoryCache, XHttpServiceGet, CLIENT_SECRET_AUTH_METHOD_POST
 from httpx import AsyncClient, Client
 
 memory_cache = MemoryCache()
@@ -129,6 +126,7 @@ http_service = XHttpServiceGet(
 auth = OidcAuthentication(
     issuer="https://auth.example.com",
     scopes=["openid"],
+    api_audience=None,
     service=http_service,
     memory_cache=memory_cache,
 )
@@ -171,7 +169,7 @@ All auth methods work identically with `get_access_token_async()`:
 ```python
 import asyncio
 from axa_fr_oidc import OidcClient
-from axa_fr_oidc.constants import CLIENT_SECRET_AUTH_METHOD_POST
+from axa_fr_oidc import CLIENT_SECRET_AUTH_METHOD_POST
 
 async def main():
     async with OidcClient(

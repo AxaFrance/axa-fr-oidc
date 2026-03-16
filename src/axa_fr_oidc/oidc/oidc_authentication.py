@@ -14,6 +14,7 @@ from loguru import logger
 from axa_fr_oidc.constants import (
     DEFAULT_CLOCK_SKEW_SECONDS,
     DEFAULT_DPOP_MAX_AGE_SECONDS,
+    DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
     DEFAULT_JTI_LIFETIME_SECONDS,
     DPOP_TOKEN_TYPE,
     ERROR_JWK_NOT_FOUND,
@@ -64,6 +65,16 @@ class IOidcAuthentication(abc.ABC):
     in both synchronous and asynchronous contexts.
     """
 
+    @property
+    @abc.abstractmethod
+    def api_audience(self) -> str | None:
+        """The expected audience claim value."""
+        ...
+
+    @api_audience.setter
+    @abc.abstractmethod
+    def api_audience(self, value: str | None) -> None: ...
+
     @abc.abstractmethod
     async def get_token_endpoint_async(self) -> str:
         """Get the token endpoint URL asynchronously.
@@ -89,6 +100,7 @@ class IOidcAuthentication(abc.ABC):
         dpop: str | None,
         path: str | None = None,
         http_method: str | None = None,
+        audience: str | None = None,
     ) -> AuthenticationResult:
         """Validate an access token asynchronously.
 
@@ -97,6 +109,8 @@ class IOidcAuthentication(abc.ABC):
             dpop: The DPoP proof JWT, or None if not using DPoP.
             path: The request path for DPoP validation.
             http_method: The HTTP method for DPoP validation.
+            audience: Override the audience for this validation call.
+                If provided, takes precedence over the configured api_audience.
 
         Returns:
             AuthenticationResult indicating success or failure.
@@ -110,6 +124,7 @@ class IOidcAuthentication(abc.ABC):
         dpop: str | None,
         path: str | None = None,
         http_method: str | None = None,
+        audience: str | None = None,
     ) -> AuthenticationResult:
         """Validate an access token synchronously.
 
@@ -118,6 +133,8 @@ class IOidcAuthentication(abc.ABC):
             dpop: The DPoP proof JWT, or None if not using DPoP.
             path: The request path for DPoP validation.
             http_method: The HTTP method for DPoP validation.
+            audience: Override the audience for this validation call.
+                If provided, takes precedence over the configured api_audience.
 
         Returns:
             AuthenticationResult indicating success or failure.
@@ -161,6 +178,7 @@ class OidcAuthentication(IOidcAuthentication):
         service: IHttpServiceGet,
         memory_cache: IMemoryCache,
         algorithms: list[str] | None = None,
+        issuer_cache_expiration_seconds: int = DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
     ) -> None:
         """Initialize the OIDC authentication handler.
 
@@ -171,18 +189,31 @@ class OidcAuthentication(IOidcAuthentication):
             service: HTTP service for fetching OIDC configuration.
             memory_cache: Cache instance for storing JWKS.
             algorithms: List of allowed signing algorithms, defaults to SUPPORTED_ALGORITHMS.
+            issuer_cache_expiration_seconds: Time-to-live in seconds for the
+                JWKS and token_endpoint cache. Defaults to
+                DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS (1 hour).
         """
         if algorithms is None:
             algorithms = SUPPORTED_ALGORITHMS
 
         self.service = service
         self.issuer = issuer
-        self.api_audience = api_audience
+        self._api_audience = api_audience
         self.algorithms = algorithms
         self.scopes = scopes
         self.cache_token_endpoint: str | None = None
         self.memory_cache = memory_cache
+        self.issuer_cache_expiration_seconds = issuer_cache_expiration_seconds
         self.used_jti: dict[str, float] = {}
+
+    @property
+    def api_audience(self) -> str | None:
+        """The expected audience claim value."""
+        return self._api_audience
+
+    @api_audience.setter
+    def api_audience(self, value: str | None) -> None:
+        self._api_audience = value
 
     def _check_jti(self, jti: str, lifetime: int = DEFAULT_JTI_LIFETIME_SECONDS) -> bool:
         """Check if the jti is already used (replay).
@@ -265,6 +296,7 @@ class OidcAuthentication(IOidcAuthentication):
         self.memory_cache.set(
             ("auth", self.issuer),
             (token_endpoint, cache_jwks),
+            ttl_ms=self.issuer_cache_expiration_seconds * 1000,
         )
 
         return cache_jwks, token_endpoint
@@ -292,6 +324,7 @@ class OidcAuthentication(IOidcAuthentication):
         self.memory_cache.set(
             ("auth", self.issuer),
             (token_endpoint, cache_jwks),
+            ttl_ms=self.issuer_cache_expiration_seconds * 1000,
         )
         return cache_jwks, token_endpoint
 
@@ -313,7 +346,9 @@ class OidcAuthentication(IOidcAuthentication):
         _, token_endpoint = self._get_jwks()
         return token_endpoint
 
-    def _validate_access_token(self, jwt: SignedJwt, jwks: dict[str, Any]) -> AuthenticationResult:
+    def _validate_access_token(
+        self, jwt: SignedJwt, jwks: dict[str, Any], audience: str | None = None
+    ) -> AuthenticationResult:
         """Validate the OIDC token / Access Token: signature, claims (scope, issuer, audience)."""
         try:
             jwk_key = find_jwk(jwks, jwt)
@@ -330,14 +365,17 @@ class OidcAuthentication(IOidcAuthentication):
                 if scope not in token_scopes:
                     return AuthenticationResult(success=False, error=f"Scope '{scope}' not found")
 
+            # Resolve effective audience: parameter takes precedence over configured value
+            effective_audience = audience if audience is not None else self.api_audience
+
             # Standard validation (exp, iss, aud, etc.)
-            if not self.api_audience:
+            if not effective_audience:
                 # Without audience
                 jwt.validate(jwk_key, issuer=self.issuer)
             else:
                 # With audience
-                logger.debug(f"audience validation: issuer : {self.issuer} and audience: {self.api_audience}")
-                jwt.validate(jwk_key, issuer=self.issuer, audience=self.api_audience)
+                logger.debug(f"audience validation: issuer : {self.issuer} and audience: {effective_audience}")
+                jwt.validate(jwk_key, issuer=self.issuer, audience=effective_audience)
 
             return AuthenticationResult(success=True, payload=payload)
 
@@ -513,6 +551,7 @@ class OidcAuthentication(IOidcAuthentication):
         dpop: str | None,
         path: str | None,
         http_method: str | None,
+        audience: str | None = None,
     ) -> AuthenticationResult:
         """Validate access token and optionally DPoP proof.
 
@@ -522,6 +561,7 @@ class OidcAuthentication(IOidcAuthentication):
             dpop: The DPoP proof JWT, or None if not using DPoP.
             path: The request path for DPoP validation.
             http_method: The HTTP method for DPoP validation.
+            audience: Override the audience for this validation call.
 
         Returns:
             AuthenticationResult indicating success or failure.
@@ -529,7 +569,7 @@ class OidcAuthentication(IOidcAuthentication):
         jwt = SignedJwt(token)
 
         # Access token validation
-        access_token_result = self._validate_access_token(jwt, jwks)
+        access_token_result = self._validate_access_token(jwt, jwks, audience)
         if not access_token_result.success:
             return access_token_result
 
@@ -570,6 +610,7 @@ class OidcAuthentication(IOidcAuthentication):
         dpop: str | None,
         path: str | None = None,
         http_method: str | None = None,
+        audience: str | None = None,
     ) -> AuthenticationResult:
         """Asynchronous validation: validate the access token and then the DPoP.
 
@@ -579,11 +620,11 @@ class OidcAuthentication(IOidcAuthentication):
         logger.debug("get jwks & jwt")
         jwks, _ = await self._get_jwks_async()
         logger.debug("token validation start")
-        result = self._validate_token_and_dpop(token, jwks, dpop, path, http_method)
+        result = self._validate_token_and_dpop(token, jwks, dpop, path, http_method, audience)
 
         if self._should_retry_with_fresh_jwks(result):
             jwks, _ = await self._get_jwks_async()
-            result = self._validate_token_and_dpop(token, jwks, dpop, path, http_method)
+            result = self._validate_token_and_dpop(token, jwks, dpop, path, http_method, audience)
 
         return result
 
@@ -593,6 +634,7 @@ class OidcAuthentication(IOidcAuthentication):
         dpop: str | None,
         path: str | None = None,
         http_method: str | None = None,
+        audience: str | None = None,
     ) -> AuthenticationResult:
         """Synchronous validation: validate the access token and then the DPoP.
 
@@ -600,11 +642,11 @@ class OidcAuthentication(IOidcAuthentication):
         and a fresh JWKS is fetched before retrying once.
         """
         jwks, _ = self._get_jwks()
-        result = self._validate_token_and_dpop(token, jwks, dpop, path, http_method)
+        result = self._validate_token_and_dpop(token, jwks, dpop, path, http_method, audience)
 
         if self._should_retry_with_fresh_jwks(result):
             jwks, _ = self._get_jwks()
-            result = self._validate_token_and_dpop(token, jwks, dpop, path, http_method)
+            result = self._validate_token_and_dpop(token, jwks, dpop, path, http_method, audience)
 
         return result
 

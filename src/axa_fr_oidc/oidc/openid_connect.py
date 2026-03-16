@@ -2,6 +2,7 @@
 
 import abc
 import time
+import uuid
 from typing import Any
 
 import jwt  # PyJWT
@@ -225,8 +226,12 @@ class IOpenIdConnect(abc.ABC):
     """
 
     @abc.abstractmethod
-    def get_access_token(self) -> str | None:
+    def get_access_token(self, force_renew_token: bool = False) -> str | None:
         """Get an access token synchronously.
+
+        Args:
+            force_renew_token: If True, bypass the cache and fetch a new token
+                from the authorization server. Defaults to False.
 
         Returns:
             The access token string, or None if token acquisition fails.
@@ -234,8 +239,12 @@ class IOpenIdConnect(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def get_access_token_async(self) -> str | None:
+    async def get_access_token_async(self, force_renew_token: bool = False) -> str | None:
         """Get an access token asynchronously.
+
+        Args:
+            force_renew_token: If True, bypass the cache and fetch a new token
+                from the authorization server. Defaults to False.
 
         Returns:
             The access token string, or None if token acquisition fails.
@@ -330,6 +339,7 @@ class OpenIdConnect(IOpenIdConnect):
 
         self.authentication = authentication
         self.memory_cache = memory_cache
+        self._instance_id = str(uuid.uuid4())
         self._oauth2client: OAuth2Client | None = None
 
     def _get_oauth2_client(self) -> OAuth2Client:
@@ -347,22 +357,26 @@ class OpenIdConnect(IOpenIdConnect):
             )
         return self._oauth2client
 
-    def _get_token(self, token_endpoint: str) -> str | None:
+    def _get_token(self, token_endpoint: str, force_renew_token: bool = False) -> str | None:
         """Get a valid access token, using cache if available.
 
         Args:
             token_endpoint: The OAuth2 token endpoint URL.
+            force_renew_token: If True, bypass the cache and fetch a new token.
 
         Returns:
             The access token string, or None if token acquisition or validation fails.
         """
-        access_token_cached: Any = self.memory_cache.get(("oidc", self.client_id))
+        cache_key = ("oidc", self.client_id, self._instance_id)
 
-        if access_token_cached is not None:
-            validation_result = self.authentication.validate(str(access_token_cached), None)
+        if not force_renew_token:
+            access_token_cached: Any = self.memory_cache.get(cache_key)
 
-            if validation_result.success:
-                return str(access_token_cached)
+            if access_token_cached is not None:
+                validation_result = self.authentication.validate(str(access_token_cached), None)
+
+                if validation_result.success:
+                    return str(access_token_cached)
 
         access_token: str
         if self.private_key is not None:
@@ -381,35 +395,45 @@ class OpenIdConnect(IOpenIdConnect):
                 self.authentication.get_scopes(),
                 auth_method=self.auth_method,
             )
+        else:
+            raise ValueError("Either client_secret or private_key must be provided.")
 
         validation_result = self.authentication.validate(access_token, None)
 
         if validation_result.success:
-            self.memory_cache.set(("oidc", self.client_id), access_token)
+            self.memory_cache.set(cache_key, access_token)
 
             return access_token
 
         return None
 
-    def get_access_token(self) -> str | None:
+    def get_access_token(self, force_renew_token: bool = False) -> str | None:
         """Get an access token synchronously.
+
+        Args:
+            force_renew_token: If True, bypass the cache and fetch a new token
+                from the authorization server. Defaults to False.
 
         Returns:
             The access token string, or None if token acquisition fails.
         """
         token_endpoint = self.authentication.get_token_endpoint()
 
-        return self._get_token(token_endpoint)
+        return self._get_token(token_endpoint, force_renew_token)
 
-    async def get_access_token_async(self) -> str | None:
+    async def get_access_token_async(self, force_renew_token: bool = False) -> str | None:
         """Get an access token asynchronously.
+
+        Args:
+            force_renew_token: If True, bypass the cache and fetch a new token
+                from the authorization server. Defaults to False.
 
         Returns:
             The access token string, or None if token acquisition fails.
         """
         token_endpoint = await self.authentication.get_token_endpoint_async()
 
-        return self._get_token(token_endpoint)
+        return self._get_token(token_endpoint, force_renew_token)
 
     def token_exchange(
         self,

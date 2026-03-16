@@ -18,51 +18,11 @@ async def test_oidc_success(mocker):
 
     access_token = await oidc.get_access_token_async()
 
-    assert access_token is not None
     assert access_token == "test"
 
     access_token = oidc.get_access_token()
 
-    assert access_token is not None
     assert access_token == "test"
-
-
-@pytest.mark.asyncio
-async def test_oidc_failure(mocker):
-    mocker.patch("axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token", return_value="test")
-
-    oidc = OpenIdConnect(FakeBadAuthentication(), MemoryCache(), str(uuid.uuid4()), "test")
-
-    access_token = await oidc.get_access_token_async()
-
-    assert access_token is None
-
-    access_token = oidc.get_access_token()
-
-    assert access_token is None
-
-
-@pytest.mark.asyncio
-async def test_oidc_cache(mocker):
-    random_token = str(uuid.uuid4())
-    mocker.patch("axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token", return_value=random_token)
-
-    oidc = OpenIdConnect(FakeAuthentication(), MemoryCache(), str(uuid.uuid4()), "test")
-
-    access_token = await oidc.get_access_token_async()
-
-    assert access_token is not None
-    assert access_token == random_token
-
-    mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
-        return_value=str(uuid.uuid4()),
-    )
-
-    same_access_token = await oidc.get_access_token_async()
-
-    assert same_access_token is not None
-    assert same_access_token == random_token
 
 
 def test_oidc_raises_without_credentials():
@@ -218,3 +178,132 @@ def test_oidc_get_access_token_without_private_key(monkeypatch):
 
     token = oidc.get_access_token()
     assert token == "FAKE_ACCESS_TOKEN"
+
+
+def test_oidc_instance_id_is_unique():
+    """Test that each OpenIdConnect instance gets a unique instance ID."""
+    oidc1 = OpenIdConnect(FakeAuthentication(), MemoryCache(), "same-client-id", "secret")
+    oidc2 = OpenIdConnect(FakeAuthentication(), MemoryCache(), "same-client-id", "secret")
+
+    assert oidc1._instance_id != oidc2._instance_id
+
+
+def test_oidc_cache_isolation_between_instances(mocker):
+    """Test that two instances with the same client_id do not share token cache."""
+    call_count = 0
+
+    def fake_get_token(token_endpoint, client_id, client_secret, scopes, auth_method="client_secret_jwt"):
+        nonlocal call_count
+        call_count += 1
+        return f"token-{call_count}"
+
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        side_effect=fake_get_token,
+    )
+
+    client_id = "shared-client-id"
+    oidc1 = OpenIdConnect(FakeAuthentication(), MemoryCache(), client_id, "secret")
+    oidc2 = OpenIdConnect(FakeAuthentication(), MemoryCache(), client_id, "secret")
+
+    token1 = oidc1.get_access_token()
+    token2 = oidc2.get_access_token()
+
+    # Each instance should have fetched its own token
+    assert token1 != token2
+    assert call_count == 2
+
+
+def test_oidc_force_renew_token(mocker):
+    """Test that force_renew_token bypasses the cache."""
+    call_count = 0
+
+    def fake_get_token(token_endpoint, client_id, client_secret, scopes, auth_method="client_secret_jwt"):
+        nonlocal call_count
+        call_count += 1
+        return f"token-{call_count}"
+
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        side_effect=fake_get_token,
+    )
+
+    oidc = OpenIdConnect(FakeAuthentication(), MemoryCache(), str(uuid.uuid4()), "secret")
+
+    # First call: fetches a new token
+    token1 = oidc.get_access_token()
+    assert token1 == "token-1"
+    assert call_count == 1
+
+    # Second call without force: returns cached token
+    token2 = oidc.get_access_token()
+    assert token2 == "token-1"
+    assert call_count == 1  # No extra fetch
+
+    # Third call with force_renew_token=True: fetches a new token
+    token3 = oidc.get_access_token(force_renew_token=True)
+    assert token3 == "token-2"
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_oidc_force_renew_token_async(mocker):
+    """Test that force_renew_token works asynchronously."""
+    call_count = 0
+
+    def fake_get_token(token_endpoint, client_id, client_secret, scopes, auth_method="client_secret_jwt"):
+        nonlocal call_count
+        call_count += 1
+        return f"token-{call_count}"
+
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        side_effect=fake_get_token,
+    )
+
+    oidc = OpenIdConnect(FakeAuthentication(), MemoryCache(), str(uuid.uuid4()), "secret")
+
+    # First call: fetches a new token
+    token1 = await oidc.get_access_token_async()
+    assert token1 == "token-1"
+
+    # Second call without force: returns cached token
+    token2 = await oidc.get_access_token_async()
+    assert token2 == "token-1"
+    assert call_count == 1
+
+    # Third call with force: fetches a new token
+    token3 = await oidc.get_access_token_async(force_renew_token=True)
+    assert token3 == "token-2"
+    assert call_count == 2
+
+
+def test_oidc_force_renew_token_default_false(mocker):
+    """Test that force_renew_token defaults to False (uses cache)."""
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        return_value="cached-token",
+    )
+
+    oidc = OpenIdConnect(FakeAuthentication(), MemoryCache(), str(uuid.uuid4()), "secret")
+
+    # First call caches the token
+    token1 = oidc.get_access_token()
+    assert token1 == "cached-token"
+
+    # Default behavior uses cache
+    token2 = oidc.get_access_token()
+    assert token2 == "cached-token"
+
+
+def test_oidc_get_token_returns_none_on_validation_failure(mocker):
+    """Test that _get_token returns None when validation fails."""
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        return_value="invalid-token",
+    )
+
+    oidc = OpenIdConnect(FakeBadAuthentication(), MemoryCache(), str(uuid.uuid4()), "secret")
+
+    token = oidc.get_access_token()
+    assert token is None
