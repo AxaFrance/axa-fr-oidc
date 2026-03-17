@@ -18,6 +18,17 @@ pytest_plugins = ["tests.dpop_fixtures"]
 
 
 class FakeAuthentication(IOidcAuthentication):
+    def __init__(self) -> None:
+        self._api_audience: str | None = None
+
+    @property
+    def api_audience(self) -> str | None:
+        return self._api_audience
+
+    @api_audience.setter
+    def api_audience(self, value: str | None) -> None:
+        self._api_audience = value
+
     async def get_token_endpoint_async(self) -> str:
         return "https://test/token"
 
@@ -47,6 +58,17 @@ class FakeAuthentication(IOidcAuthentication):
 
 
 class FakeBadAuthentication(IOidcAuthentication):
+    def __init__(self) -> None:
+        self._api_audience: str | None = None
+
+    @property
+    def api_audience(self) -> str | None:
+        return self._api_audience
+
+    @api_audience.setter
+    def api_audience(self, value: str | None) -> None:
+        self._api_audience = value
+
     async def get_token_endpoint_async(self) -> str:
         return "https://test/token"
 

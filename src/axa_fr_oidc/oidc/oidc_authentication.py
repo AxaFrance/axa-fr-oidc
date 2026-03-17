@@ -64,6 +64,16 @@ class IOidcAuthentication(abc.ABC):
     in both synchronous and asynchronous contexts.
     """
 
+    @property
+    @abc.abstractmethod
+    def api_audience(self) -> str | None:
+        """The expected audience claim value."""
+        ...
+
+    @api_audience.setter
+    @abc.abstractmethod
+    def api_audience(self, value: str | None) -> None: ...
+
     @abc.abstractmethod
     async def get_token_endpoint_async(self) -> str:
         """Get the token endpoint URL asynchronously.
@@ -181,13 +191,22 @@ class OidcAuthentication(IOidcAuthentication):
 
         self.service = service
         self.issuer = issuer
-        self.api_audience = api_audience
+        self._api_audience = api_audience
         self.algorithms = algorithms
         self.scopes = scopes
         self.cache_token_endpoint: str | None = token_endpoint
         self.memory_cache = memory_cache
         self.used_jti: dict[str, float] = {}
         self._explicit_token_endpoint = token_endpoint
+
+    @property
+    def api_audience(self) -> str | None:
+        """The expected audience claim value."""
+        return self._api_audience
+
+    @api_audience.setter
+    def api_audience(self, value: str | None) -> None:
+        self._api_audience = value
 
     def _check_jti(self, jti: str, lifetime: int = DEFAULT_JTI_LIFETIME_SECONDS) -> bool:
         """Check if the jti is already used (replay).

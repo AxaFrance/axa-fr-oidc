@@ -225,6 +225,15 @@ class IOpenIdConnect(abc.ABC):
     """
 
     @abc.abstractmethod
+    def get_access_token_raw(self) -> str:
+        """Get an access token without post-fetch validation.
+
+        Returns:
+            The access token string.
+        """
+        ...
+
+    @abc.abstractmethod
     def get_access_token(self) -> str | None:
         """Get an access token synchronously.
 
