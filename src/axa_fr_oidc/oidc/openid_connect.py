@@ -225,8 +225,8 @@ class IOpenIdConnect(abc.ABC):
     """
 
     @abc.abstractmethod
-    def get_access_token_raw(self) -> str:
-        """Get an access token without post-fetch validation.
+    def get_access_token(self) -> str:
+        """Get an access token synchronously.
 
         Returns:
             The access token string.
@@ -234,20 +234,11 @@ class IOpenIdConnect(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def get_access_token(self) -> str | None:
-        """Get an access token synchronously.
-
-        Returns:
-            The access token string, or None if token acquisition fails.
-        """
-        ...
-
-    @abc.abstractmethod
-    async def get_access_token_async(self) -> str | None:
+    async def get_access_token_async(self) -> str:
         """Get an access token asynchronously.
 
         Returns:
-            The access token string, or None if token acquisition fails.
+            The access token string.
         """
         ...
 
@@ -356,61 +347,19 @@ class OpenIdConnect(IOpenIdConnect):
             )
         return self._oauth2client
 
-    def _get_token(self, token_endpoint: str) -> str | None:
-        """Get a valid access token, using cache if available.
+    def _fetch_token(self, token_endpoint: str) -> str:
+        """Fetch an access token from the token endpoint.
 
         Args:
             token_endpoint: The OAuth2 token endpoint URL.
-
-        Returns:
-            The access token string, or None if token acquisition or validation fails.
-        """
-        access_token_cached: Any = self.memory_cache.get(("oidc", self.client_id))
-
-        if access_token_cached is not None:
-            validation_result = self.authentication.validate(str(access_token_cached), None)
-
-            if validation_result.success:
-                return str(access_token_cached)
-
-        access_token: str
-        if self.private_key is not None:
-            access_token = _get_private_key_access_token(
-                token_endpoint,
-                self.client_id,
-                self.private_key,
-                self.authentication.get_scopes(),
-                self.algorithm,
-            )
-        elif self.client_secret is not None:
-            access_token = _get_client_secret_access_token(
-                token_endpoint,
-                self.client_id,
-                self.client_secret,
-                self.authentication.get_scopes(),
-                auth_method=self.auth_method,
-            )
-
-        validation_result = self.authentication.validate(access_token, None)
-
-        if validation_result.success:
-            self.memory_cache.set(("oidc", self.client_id), access_token)
-
-            return access_token
-
-        return None
-
-    def get_access_token_raw(self) -> str:
-        """Get an access token without post-fetch validation.
 
         Returns:
             The access token string.
 
         Raises:
             HTTPError: If the token request fails.
+            ValueError: If neither client_secret nor private_key is provided.
         """
-        token_endpoint = self.authentication.get_token_endpoint()
-
         if self.private_key is not None:
             return _get_private_key_access_token(
                 token_endpoint,
@@ -429,25 +378,29 @@ class OpenIdConnect(IOpenIdConnect):
             )
         raise ValueError("Either client_secret or private_key must be provided.")
 
-    def get_access_token(self) -> str | None:
+    def get_access_token(self) -> str:
         """Get an access token synchronously.
 
         Returns:
-            The access token string, or None if token acquisition fails.
+            The access token string.
+
+        Raises:
+            HTTPError: If the token request fails.
         """
         token_endpoint = self.authentication.get_token_endpoint()
+        return self._fetch_token(token_endpoint)
 
-        return self._get_token(token_endpoint)
-
-    async def get_access_token_async(self) -> str | None:
+    async def get_access_token_async(self) -> str:
         """Get an access token asynchronously.
 
         Returns:
-            The access token string, or None if token acquisition fails.
+            The access token string.
+
+        Raises:
+            HTTPError: If the token request fails.
         """
         token_endpoint = await self.authentication.get_token_endpoint_async()
-
-        return self._get_token(token_endpoint)
+        return self._fetch_token(token_endpoint)
 
     def token_exchange(
         self,
