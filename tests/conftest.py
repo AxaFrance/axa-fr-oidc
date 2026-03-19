@@ -41,6 +41,7 @@ class FakeAuthentication(IOidcAuthentication):
         dpop: str | None,
         path: str | None = None,
         http_method: str | None = None,
+        audience: str | None = None,
     ) -> AuthenticationResult:
         return AuthenticationResult(True, "", None)
 
@@ -50,6 +51,7 @@ class FakeAuthentication(IOidcAuthentication):
         dpop: str | None,
         path: str | None = None,
         http_method: str | None = None,
+        audience: str | None = None,
     ) -> AuthenticationResult:
         return AuthenticationResult(True, "", None)
 
@@ -81,6 +83,7 @@ class FakeBadAuthentication(IOidcAuthentication):
         dpop: str | None,
         path: str | None = None,
         http_method: str | None = None,
+        audience: str | None = None,
     ) -> AuthenticationResult:
         return AuthenticationResult(False, "", None)
 
@@ -90,6 +93,7 @@ class FakeBadAuthentication(IOidcAuthentication):
         dpop: str | None,
         path: str | None = None,
         http_method: str | None = None,
+        audience: str | None = None,
     ) -> AuthenticationResult:
         return AuthenticationResult(False, "", None)
 
