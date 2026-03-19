@@ -10,6 +10,47 @@
 
 A Python library for OpenID Connect (OIDC) authentication with DPoP (Demonstrating Proof-of-Possession) support, featuring JWT validation, token caching, and both sync/async operations.
 
+## Table of Contents (ToC)
+
+- [Table of Contents (ToC)](#table-of-contents-toc)
+- [Features](#features)
+- [Installation](#installation)
+  - [Using uv (recommended)](#using-uv-recommended)
+  - [Using pip](#using-pip)
+- [Quick Start](#quick-start)
+  - [Simple Usage with OidcClient (Recommended)](#simple-usage-with-oidcclient-recommended)
+    - [Using Context Managers](#using-context-managers)
+    - [Async Operations](#async-operations)
+    - [Private Key Authentication](#private-key-authentication)
+    - [Validating DPoP Tokens](#validating-dpop-tokens)
+    - [Token Exchange](#token-exchange)
+    - [Custom HTTP Configuration (Proxies, SSL, Timeouts)](#custom-http-configuration-proxies-ssl-timeouts)
+    - [Client Secret Authentication Methods](#client-secret-authentication-methods)
+    - [Explicit Token Endpoint](#explicit-token-endpoint)
+  - [Extract Properties from a JWT Token](#extract-properties-from-a-jwt-token)
+- [Advanced Usage (Low-Level API)](#advanced-usage-low-level-api)
+  - [Using OpenIdConnect and OidcAuthentication Directly](#using-openidconnect-and-oidcauthentication-directly)
+  - [Async Operations with Low-Level API](#async-operations-with-low-level-api)
+  - [Using Private Key Authentication (Low-Level)](#using-private-key-authentication-low-level)
+  - [Custom Configuration](#custom-configuration)
+    - [Using OidcClient](#using-oidcclient)
+    - [Using Low-Level API](#using-low-level-api)
+- [API Reference](#api-reference)
+  - [High-Level Client (Recommended)](#high-level-client-recommended)
+  - [Low-Level Classes](#low-level-classes)
+  - [Interfaces](#interfaces)
+  - [Constants](#constants)
+- [Advanced Configuration](#advanced-configuration)
+  - [Client Secret Authentication Methods](#client-secret-authentication-methods-1)
+  - [Proxy, SSL, and Timeout Configuration](#proxy-ssl-and-timeout-configuration)
+- [Development](#development)
+  - [Setup Development Environment](#setup-development-environment)
+  - [Using the Makefile](#using-the-makefile)
+  - [Running Tests](#running-tests)
+  - [Running Quality Checks](#running-quality-checks)
+  - [Installing Specific Dependency Groups](#installing-specific-dependency-groups)
+- [Contributing](#contributing)
+
 ## Features
 
 - 🔐 **OIDC Authentication** - Full OpenID Connect authentication support
@@ -268,6 +309,23 @@ token = client.get_access_token()
 
 For more details, see the [Client Secret Auth Methods Guide](./docs/client-secret-auth-methods.md).
 
+#### Explicit Token Endpoint
+
+If you already know the token endpoint URL, you can skip OIDC discovery for token retrieval:
+
+```python
+from axa_fr_oidc import OidcClient
+
+client = OidcClient(
+    issuer="https://issuer.url",
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    token_endpoint="https://issuer.url/oauth/token",
+)
+
+token = client.get_access_token()
+```
+
 ### Extract Properties from a JWT Token
 
 ```python
@@ -312,7 +370,6 @@ auth = OidcAuthentication(
     service=http_service,
     memory_cache=memory_cache,
     algorithms=["RS256", "ES256"],
-    cache_expiration=7200,  # Cache JWKS for 2 hours
 )
 
 # Create OpenID Connect client
@@ -429,7 +486,6 @@ client = OidcClient(
     scopes=["openid", "profile"],
     audience="your-api-audience",
     algorithms=["RS256", "ES256"],  # Allowed algorithms for validation
-    cache_expiration=7200,  # Cache JWKS for 2 hours (default: 24 hours)
 )
 ```
 
@@ -453,7 +509,6 @@ auth = OidcAuthentication(
     ),
     memory_cache=MemoryCache(),
     algorithms=["RS256", "ES256"],  # Supported algorithms
-    cache_expiration=7200,  # Cache JWKS for 2 hours (default: 24 hours)
 )
 ```
 
@@ -495,7 +550,6 @@ The library exports useful constants for configuration:
 
 ```python
 from axa_fr_oidc import (
-    DEFAULT_CACHE_EXPIRATION_SECONDS,  # 86400 (24 hours)
     DEFAULT_DPOP_MAX_AGE_SECONDS,      # 300 (5 minutes)
     DEFAULT_CLOCK_SKEW_SECONDS,        # 300 (5 minutes)
     DEFAULT_JTI_LIFETIME_SECONDS,      # 300 (5 minutes)
