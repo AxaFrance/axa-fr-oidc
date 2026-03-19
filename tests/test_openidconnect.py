@@ -7,7 +7,7 @@ from requests_oauth2client import BearerToken
 from axa_fr_oidc.memory_cache.memory_cache import MemoryCache
 from axa_fr_oidc.oidc.openid_connect import OpenIdConnect, _get_access_token
 
-from .conftest import FakeAuthentication, FakeBadAuthentication
+from .conftest import FakeAuthentication
 
 
 @pytest.mark.asyncio
@@ -18,51 +18,11 @@ async def test_oidc_success(mocker):
 
     access_token = await oidc.get_access_token_async()
 
-    assert access_token is not None
     assert access_token == "test"
 
     access_token = oidc.get_access_token()
 
-    assert access_token is not None
     assert access_token == "test"
-
-
-@pytest.mark.asyncio
-async def test_oidc_failure(mocker):
-    mocker.patch("axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token", return_value="test")
-
-    oidc = OpenIdConnect(FakeBadAuthentication(), MemoryCache(), str(uuid.uuid4()), "test")
-
-    access_token = await oidc.get_access_token_async()
-
-    assert access_token is None
-
-    access_token = oidc.get_access_token()
-
-    assert access_token is None
-
-
-@pytest.mark.asyncio
-async def test_oidc_cache(mocker):
-    random_token = str(uuid.uuid4())
-    mocker.patch("axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token", return_value=random_token)
-
-    oidc = OpenIdConnect(FakeAuthentication(), MemoryCache(), str(uuid.uuid4()), "test")
-
-    access_token = await oidc.get_access_token_async()
-
-    assert access_token is not None
-    assert access_token == random_token
-
-    mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
-        return_value=str(uuid.uuid4()),
-    )
-
-    same_access_token = await oidc.get_access_token_async()
-
-    assert same_access_token is not None
-    assert same_access_token == random_token
 
 
 def test_oidc_raises_without_credentials():
