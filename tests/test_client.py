@@ -303,7 +303,27 @@ class TestOidcClientTokenOperations:
         token = client.get_access_token()
 
         assert token == "test-access-token"
-        mock_openid_connect.get_access_token.assert_called_once()
+        mock_openid_connect.get_access_token.assert_called_once_with(False)
+
+    def test_get_access_token_force_refresh(self, mocker):
+        """Test getting access token with force_renew_token=True."""
+        mock_openid_connect = mocker.Mock()
+        mock_openid_connect.get_access_token.return_value = "fresh-token"
+
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+            http_service=FakeHttpService(),
+        )
+
+        # Inject mock OpenIdConnect
+        client._openid_connect = mock_openid_connect
+
+        token = client.get_access_token(force_renew_token=True)
+
+        assert token == "fresh-token"
+        mock_openid_connect.get_access_token.assert_called_once_with(True)
 
     @pytest.mark.asyncio
     async def test_get_access_token_async(self, mocker):
@@ -324,7 +344,28 @@ class TestOidcClientTokenOperations:
         token = await client.get_access_token_async()
 
         assert token == "test-access-token-async"
-        mock_openid_connect.get_access_token_async.assert_called_once()
+        mock_openid_connect.get_access_token_async.assert_called_once_with(False)
+
+    @pytest.mark.asyncio
+    async def test_get_access_token_async_force_refresh(self, mocker):
+        """Test getting access token asynchronously with force_renew_token=True."""
+        mock_openid_connect = mocker.Mock()
+        mock_openid_connect.get_access_token_async = mocker.AsyncMock(return_value="fresh-async-token")
+
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+            http_service=FakeHttpService(),
+        )
+
+        # Inject mock OpenIdConnect
+        client._openid_connect = mock_openid_connect
+
+        token = await client.get_access_token_async(force_renew_token=True)
+
+        assert token == "fresh-async-token"
+        mock_openid_connect.get_access_token_async.assert_called_once_with(True)
 
     def test_get_access_token_raises_without_credentials(self):
         """Test that get_access_token raises error without credentials."""

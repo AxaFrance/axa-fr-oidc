@@ -95,6 +95,9 @@ client = OidcClient(
 # Get an access token (automatically cached and refreshed)
 access_token = client.get_access_token()
 
+# Force a fresh token from the authorization server (bypasses cache)
+fresh_token = client.get_access_token(force_renew_token=True)
+
 # Validate a token
 result = client.validate_token(access_token)
 if result.success:
@@ -500,7 +503,7 @@ auth = OidcAuthentication(
 ### High-Level Client (Recommended)
 
 - **`OidcClient`** - Simplified, all-in-one client for OIDC operations
-  - `get_access_token()` / `get_access_token_async()` - Get an access token
+  - `get_access_token(force_renew_token=False)` / `get_access_token_async(force_renew_token=False)` - Get an access token (set `force_renew_token=True` to bypass cache)
   - `validate_token()` / `validate_token_async()` - Validate an access token
   - `token_exchange()` - Exchange tokens (RFC 8693)
   - `get_token_endpoint()` / `get_token_endpoint_async()` - Get the token endpoint URL

@@ -223,14 +223,18 @@ class OidcClient:
             )
         return self._openid_connect
 
-    def get_access_token(self) -> str:
+    def get_access_token(self, force_renew_token: bool = False) -> str | None:
         """Get an access token synchronously.
 
         Uses client credentials flow with either client_secret or private_key
         authentication.
 
+        Args:
+            force_renew_token: If True, bypass the cache and fetch a new token
+                from the authorization server. Defaults to False.
+
         Returns:
-            The access token string.
+            The access token string, or None if token acquisition fails.
 
         Raises:
             ValueError: If neither client_secret nor private_key is provided.
@@ -243,17 +247,23 @@ class OidcClient:
             ...     client_secret="my-secret",
             ... )
             >>> token = client.get_access_token()
+            >>> # Force a fresh token from the authorization server
+            >>> fresh_token = client.get_access_token(force_renew_token=True)
         """
-        return self.openid_connect.get_access_token()
+        return self.openid_connect.get_access_token(force_renew_token)
 
-    async def get_access_token_async(self) -> str:
+    async def get_access_token_async(self, force_renew_token: bool = False) -> str | None:
         """Get an access token asynchronously.
 
         Uses client credentials flow with either client_secret or private_key
         authentication.
 
+        Args:
+            force_renew_token: If True, bypass the cache and fetch a new token
+                from the authorization server. Defaults to False.
+
         Returns:
-            The access token string.
+            The access token string, or None if token acquisition fails.
 
         Raises:
             ValueError: If neither client_secret nor private_key is provided.
@@ -266,8 +276,10 @@ class OidcClient:
             ...     client_secret="my-secret",
             ... )
             >>> token = await client.get_access_token_async()
+            >>> # Force a fresh token from the authorization server
+            >>> fresh_token = await client.get_access_token_async(force_renew_token=True)
         """
-        return await self.openid_connect.get_access_token_async()
+        return await self.openid_connect.get_access_token_async(force_renew_token)
 
     def validate_token(
         self,
