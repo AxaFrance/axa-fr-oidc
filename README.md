@@ -26,7 +26,6 @@ A Python library for OpenID Connect (OIDC) authentication with DPoP (Demonstrati
     - [Token Exchange](#token-exchange)
     - [Custom HTTP Configuration (Proxies, SSL, Timeouts)](#custom-http-configuration-proxies-ssl-timeouts)
     - [Client Secret Authentication Methods](#client-secret-authentication-methods)
-    - [Explicit Token Endpoint](#explicit-token-endpoint)
   - [Extract Properties from a JWT Token](#extract-properties-from-a-jwt-token)
 - [Advanced Usage (Low-Level API)](#advanced-usage-low-level-api)
   - [Using OpenIdConnect and OidcAuthentication Directly](#using-openidconnect-and-oidcauthentication-directly)
@@ -309,22 +308,6 @@ token = client.get_access_token()
 
 For more details, see the [Client Secret Auth Methods Guide](./docs/client-secret-auth-methods.md).
 
-#### Explicit Token Endpoint
-
-If you already know the token endpoint URL, you can skip OIDC discovery for token retrieval:
-
-```python
-from axa_fr_oidc import OidcClient
-
-client = OidcClient(
-    issuer="https://issuer.url",
-    client_id="your-client-id",
-    client_secret="your-client-secret",
-    token_endpoint="https://issuer.url/oauth/token",
-)
-
-token = client.get_access_token()
-```
 
 ### Extract Properties from a JWT Token
 

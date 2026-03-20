@@ -177,7 +177,6 @@ class OidcAuthentication(IOidcAuthentication):
         service: IHttpServiceGet,
         memory_cache: IMemoryCache,
         algorithms: list[str] | None = None,
-        token_endpoint: str | None = None,
     ) -> None:
         """Initialize the OIDC authentication handler.
 
@@ -188,9 +187,6 @@ class OidcAuthentication(IOidcAuthentication):
             service: HTTP service for fetching OIDC configuration.
             memory_cache: Cache instance for storing JWKS.
             algorithms: List of allowed signing algorithms, defaults to SUPPORTED_ALGORITHMS.
-            token_endpoint: Explicit token endpoint URL. When provided, skips OIDC
-                discovery for the token endpoint (JWKS is still discovered). Defaults
-                to None (auto-discover from issuer).
         """
         if algorithms is None:
             algorithms = SUPPORTED_ALGORITHMS
@@ -200,10 +196,9 @@ class OidcAuthentication(IOidcAuthentication):
         self._api_audience = api_audience
         self.algorithms = algorithms
         self.scopes = scopes
-        self.cache_token_endpoint: str | None = token_endpoint
+        self.cache_token_endpoint: str | None = None
         self.memory_cache = memory_cache
         self.used_jti: dict[str, float] = {}
-        self._explicit_token_endpoint = token_endpoint
 
     @property
     def api_audience(self) -> str | None:
@@ -270,7 +265,7 @@ class OidcAuthentication(IOidcAuthentication):
         signing key, allowing a fresh JWKS to be fetched on retry.
         """
         self.memory_cache.delete(("auth", self.issuer))
-        self.cache_token_endpoint = self._explicit_token_endpoint
+        self.cache_token_endpoint = None
 
     async def _get_jwks_async(self) -> tuple[dict[str, Any], str]:
         """Get JWKS and token endpoint asynchronously.
@@ -288,7 +283,7 @@ class OidcAuthentication(IOidcAuthentication):
         # Get it from the well-known config
         wellknowurl = await self.service.get_async(self.issuer + OIDC_WELL_KNOWN_PATH)
         cache_jwks = await self.service.get_async(wellknowurl["jwks_uri"])
-        token_endpoint: str = self._explicit_token_endpoint or wellknowurl["token_endpoint"]
+        token_endpoint: str = wellknowurl["token_endpoint"]
 
         self.cache_token_endpoint = token_endpoint
 
@@ -315,7 +310,7 @@ class OidcAuthentication(IOidcAuthentication):
         # Get it from the well-known config
         wellknowurl = self.service.get(self.issuer + OIDC_WELL_KNOWN_PATH)
         cache_jwks = self.service.get(wellknowurl["jwks_uri"])
-        token_endpoint: str = self._explicit_token_endpoint or wellknowurl["token_endpoint"]
+        token_endpoint: str = wellknowurl["token_endpoint"]
 
         self.cache_token_endpoint = token_endpoint
 

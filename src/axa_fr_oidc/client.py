@@ -84,7 +84,6 @@ class OidcClient:
         proxy: str | None = None,
         verify: bool = True,
         timeout: float | None = None,
-        token_endpoint: str | None = None,
     ) -> None:
         """Initialize the OIDC client.
 
@@ -121,9 +120,6 @@ class OidcClient:
             verify: Whether to verify SSL certificates. Defaults to True.
             timeout: Timeout in seconds for HTTP requests. Defaults to None
                 (no timeout).
-            token_endpoint: Explicit token endpoint URL. When provided, skips
-                OIDC discovery for the token endpoint. Defaults to None
-                (auto-discover from issuer).
         """
         self.issuer = issuer
         self.client_id = client_id
@@ -137,7 +133,6 @@ class OidcClient:
         self.proxy = proxy
         self.verify = verify
         self.timeout = timeout
-        self.token_endpoint = token_endpoint
 
         # Lazy initialization for HTTP clients
         self._http_client: Client | None = None
@@ -199,7 +194,6 @@ class OidcClient:
                 service=self.http_service,
                 memory_cache=self.memory_cache,
                 algorithms=self.algorithms,
-                token_endpoint=self.token_endpoint,
             )
         return self._authentication
 
