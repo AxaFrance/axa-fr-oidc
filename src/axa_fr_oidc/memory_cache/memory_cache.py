@@ -105,11 +105,10 @@ class MemoryCache(IMemoryCache):
         Returns:
             The cached value, or None if not found or expired.
         """
-        if key in self._expirations:
-            if time.time() * 1000 >= self._expirations[key]:
-                # Entry has expired
-                self.delete(key)
-                return None
+        if key in self._expirations and time.time() * 1000 >= self._expirations[key]:
+            # Entry has expired
+            self.delete(key)
+            return None
         return self.cache.get(key, None)
 
     def set(self, key: tuple[str, ...], value: Any, ttl_ms: int | None = None) -> None:

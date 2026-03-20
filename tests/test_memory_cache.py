@@ -351,4 +351,3 @@ class TestMemoryCache:
         cache.clear()
         assert len(cache._expirations) == 0
         assert len(cache.cache) == 0
-

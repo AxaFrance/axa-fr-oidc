@@ -307,4 +307,3 @@ def test_oidc_get_token_returns_none_on_validation_failure(mocker):
 
     token = oidc.get_access_token()
     assert token is None
-
