@@ -4,7 +4,7 @@ import pytest
 from requests_oauth2client import BearerToken
 
 from axa_fr_oidc.client import OidcClient
-from axa_fr_oidc.constants import DEFAULT_JWT_ALGORITHM, SUPPORTED_ALGORITHMS
+from axa_fr_oidc.constants import DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS, DEFAULT_JWT_ALGORITHM, SUPPORTED_ALGORITHMS
 from axa_fr_oidc.http_service import IHttpServiceGet
 from axa_fr_oidc.memory_cache import IMemoryCache, MemoryCache
 from axa_fr_oidc.oidc import AuthenticationResult
@@ -146,6 +146,27 @@ class TestOidcClientInitialization:
         assert client.verify is False
         assert client.timeout == 15.0
 
+    def test_init_default_issuer_cache_expiration(self):
+        """Test that issuer_cache_expiration_seconds defaults to DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS."""
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+        )
+
+        assert client.issuer_cache_expiration_seconds == DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS
+
+    def test_init_custom_issuer_cache_expiration(self):
+        """Test initialization with custom issuer_cache_expiration_seconds."""
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+            issuer_cache_expiration_seconds=7200,
+        )
+
+        assert client.issuer_cache_expiration_seconds == 7200
+
 
 class TestOidcClientProperties:
     """Tests for OidcClient lazy-loaded properties."""
@@ -209,6 +230,19 @@ class TestOidcClientProperties:
 
         # Second access returns same instance
         assert client.authentication is auth
+
+    def test_authentication_receives_issuer_cache_expiration(self):
+        """Test that issuer_cache_expiration_seconds is propagated to OidcAuthentication."""
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+            http_service=FakeHttpService(),
+            issuer_cache_expiration_seconds=7200,
+        )
+
+        auth = client.authentication
+        assert auth.issuer_cache_expiration_seconds == 7200
 
     def test_openid_connect_lazy_creation(self):
         """Test that OpenID Connect client is lazily created."""

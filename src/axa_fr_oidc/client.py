@@ -11,6 +11,7 @@ from requests_oauth2client import BearerToken, IdToken
 
 from axa_fr_oidc.constants import (
     CLIENT_SECRET_AUTH_METHOD_JWT,
+    DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
     DEFAULT_JWT_ALGORITHM,
     SUPPORTED_ALGORITHMS,
 )
@@ -84,6 +85,7 @@ class OidcClient:
         proxy: str | None = None,
         verify: bool = True,
         timeout: float | None = None,
+        issuer_cache_expiration_seconds: int = DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
     ) -> None:
         """Initialize the OIDC client.
 
@@ -120,6 +122,9 @@ class OidcClient:
             verify: Whether to verify SSL certificates. Defaults to True.
             timeout: Timeout in seconds for HTTP requests. Defaults to None
                 (no timeout).
+            issuer_cache_expiration_seconds: Time-to-live in seconds for the
+                JWKS and token_endpoint cache. Defaults to
+                DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS (3600 = 1 hour).
         """
         self.issuer = issuer
         self.client_id = client_id
@@ -133,6 +138,7 @@ class OidcClient:
         self.proxy = proxy
         self.verify = verify
         self.timeout = timeout
+        self.issuer_cache_expiration_seconds = issuer_cache_expiration_seconds
 
         # Lazy initialization for HTTP clients
         self._http_client: Client | None = None
@@ -194,6 +200,7 @@ class OidcClient:
                 service=self.http_service,
                 memory_cache=self.memory_cache,
                 algorithms=self.algorithms,
+                issuer_cache_expiration_seconds=self.issuer_cache_expiration_seconds,
             )
         return self._authentication
 

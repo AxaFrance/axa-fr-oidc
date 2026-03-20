@@ -472,6 +472,7 @@ client = OidcClient(
     scopes=["openid", "profile"],
     audience="your-api-audience",
     algorithms=["RS256", "ES256"],  # Allowed algorithms for validation
+    issuer_cache_expiration_seconds=7200,  # Cache JWKS and token_endpoint for 2 hours (default: 3600)
 )
 ```
 

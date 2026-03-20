@@ -12,9 +12,9 @@ from jwskate import Jwk, SignedJwt
 from loguru import logger
 
 from axa_fr_oidc.constants import (
-    DEFAULT_CACHE_TTL_MS,
     DEFAULT_CLOCK_SKEW_SECONDS,
     DEFAULT_DPOP_MAX_AGE_SECONDS,
+    DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
     DEFAULT_JTI_LIFETIME_SECONDS,
     DPOP_TOKEN_TYPE,
     ERROR_JWK_NOT_FOUND,
@@ -178,6 +178,7 @@ class OidcAuthentication(IOidcAuthentication):
         service: IHttpServiceGet,
         memory_cache: IMemoryCache,
         algorithms: list[str] | None = None,
+        issuer_cache_expiration_seconds: int = DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
     ) -> None:
         """Initialize the OIDC authentication handler.
 
@@ -188,6 +189,9 @@ class OidcAuthentication(IOidcAuthentication):
             service: HTTP service for fetching OIDC configuration.
             memory_cache: Cache instance for storing JWKS.
             algorithms: List of allowed signing algorithms, defaults to SUPPORTED_ALGORITHMS.
+            issuer_cache_expiration_seconds: Time-to-live in seconds for the
+                JWKS and token_endpoint cache. Defaults to
+                DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS (1 hour).
         """
         if algorithms is None:
             algorithms = SUPPORTED_ALGORITHMS
@@ -199,6 +203,7 @@ class OidcAuthentication(IOidcAuthentication):
         self.scopes = scopes
         self.cache_token_endpoint: str | None = None
         self.memory_cache = memory_cache
+        self.issuer_cache_expiration_seconds = issuer_cache_expiration_seconds
         self.used_jti: dict[str, float] = {}
 
     @property
@@ -291,7 +296,7 @@ class OidcAuthentication(IOidcAuthentication):
         self.memory_cache.set(
             ("auth", self.issuer),
             (token_endpoint, cache_jwks),
-            ttl_ms=DEFAULT_CACHE_TTL_MS,
+            ttl_ms=self.issuer_cache_expiration_seconds * 1000,
         )
 
         return cache_jwks, token_endpoint
@@ -319,7 +324,7 @@ class OidcAuthentication(IOidcAuthentication):
         self.memory_cache.set(
             ("auth", self.issuer),
             (token_endpoint, cache_jwks),
-            ttl_ms=DEFAULT_CACHE_TTL_MS,
+            ttl_ms=self.issuer_cache_expiration_seconds * 1000,
         )
         return cache_jwks, token_endpoint
 

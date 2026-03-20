@@ -10,8 +10,8 @@ DEFAULT_JTI_LIFETIME_SECONDS = 300  # 5 minutes
 DEFAULT_JWT_EXPIRATION_SECONDS = 300  # 5 minutes
 DEFAULT_HTTP_TIMEOUT_SECONDS = 5  # 5 seconds
 
-# Cache constants (in milliseconds)
-DEFAULT_CACHE_TTL_MS = 3_600_000  # 1 hour
+# Cache constants (in seconds)
+DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS = 3600  # 1 hour
 
 # Algorithm constants
 DEFAULT_JWT_ALGORITHM = "RS256"
