@@ -12,6 +12,7 @@ from jwskate import Jwk, SignedJwt
 from loguru import logger
 
 from axa_fr_oidc.constants import (
+    DEFAULT_CACHE_TTL_MS,
     DEFAULT_CLOCK_SKEW_SECONDS,
     DEFAULT_DPOP_MAX_AGE_SECONDS,
     DEFAULT_JTI_LIFETIME_SECONDS,
@@ -290,6 +291,7 @@ class OidcAuthentication(IOidcAuthentication):
         self.memory_cache.set(
             ("auth", self.issuer),
             (token_endpoint, cache_jwks),
+            ttl_ms=DEFAULT_CACHE_TTL_MS,
         )
 
         return cache_jwks, token_endpoint
@@ -317,6 +319,7 @@ class OidcAuthentication(IOidcAuthentication):
         self.memory_cache.set(
             ("auth", self.issuer),
             (token_endpoint, cache_jwks),
+            ttl_ms=DEFAULT_CACHE_TTL_MS,
         )
         return cache_jwks, token_endpoint
 

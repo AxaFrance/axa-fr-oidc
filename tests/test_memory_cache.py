@@ -1,5 +1,7 @@
 """Tests for the memory_cache module."""
 
+import time
+
 import pytest
 
 from axa_fr_oidc.memory_cache.memory_cache import (
@@ -286,3 +288,67 @@ class TestMemoryCache:
         assert retrieved == value
         assert retrieved["users"][0]["name"] == "Alice"
         assert retrieved["config"]["timeout"] == 30
+
+    def test_set_with_ttl_returns_value_before_expiration(self):
+        """Test that a value with TTL is returned before it expires."""
+        cache = MemoryCache()
+        key = ("ttl_key",)
+        cache.set(key, "ttl_value", ttl_ms=60_000)
+        assert cache.get(key) == "ttl_value"
+
+    def test_set_with_ttl_returns_none_after_expiration(self):
+        """Test that a value with TTL returns None after expiration."""
+        cache = MemoryCache()
+        key = ("ttl_expired",)
+        cache.set(key, "ttl_value", ttl_ms=1)  # 1 ms TTL
+
+        # Wait for expiration
+        time.sleep(0.01)
+
+        assert cache.get(key) is None
+        assert key not in cache.cache
+        assert key not in cache._expirations
+
+    def test_set_without_ttl_never_expires(self):
+        """Test that a value without TTL never expires."""
+        cache = MemoryCache()
+        key = ("no_ttl",)
+        cache.set(key, "persistent")
+        assert cache.get(key) == "persistent"
+        assert key not in cache._expirations
+
+    def test_set_overwrite_removes_ttl_when_none(self):
+        """Test that overwriting a key without TTL removes previous expiration."""
+        cache = MemoryCache()
+        key = ("overwrite_ttl",)
+
+        cache.set(key, "value1", ttl_ms=60_000)
+        assert key in cache._expirations
+
+        cache.set(key, "value2")  # No TTL
+        assert key not in cache._expirations
+        assert cache.get(key) == "value2"
+
+    def test_delete_removes_expiration(self):
+        """Test that deleting a key also removes its expiration."""
+        cache = MemoryCache()
+        key = ("delete_ttl",)
+
+        cache.set(key, "value", ttl_ms=60_000)
+        assert key in cache._expirations
+
+        cache.delete(key)
+        assert key not in cache._expirations
+        assert key not in cache.cache
+
+    def test_clear_removes_all_expirations(self):
+        """Test that clearing the cache also removes all expirations."""
+        cache = MemoryCache()
+
+        cache.set(("key1",), "v1", ttl_ms=60_000)
+        cache.set(("key2",), "v2", ttl_ms=120_000)
+
+        cache.clear()
+        assert len(cache._expirations) == 0
+        assert len(cache.cache) == 0
+
