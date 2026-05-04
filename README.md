@@ -2,9 +2,9 @@
 
 <div align="center">
 
-| Python                                                                                          | Project                                                                                                      |
-|-------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
-| ![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white) | ![Axa France OIDC Badge](https://img.shields.io/badge/Axa_France-OIDC-blue?logo=apachekafka&logoColor=white) |
+| Python                                                                                          | Project                                                                                                      | PyPI                                                                                                         | Downloads                                                                                                    |
+|-------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
+| ![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white) | ![Axa France OIDC Badge](https://img.shields.io/badge/Axa_France-OIDC-blue?logo=apachekafka&logoColor=white) | [![PyPI version](https://img.shields.io/pypi/v/axa-fr-oidc?logo=pypi&logoColor=white)](https://pypi.org/project/axa-fr-oidc/) | [![PyPI downloads](https://img.shields.io/pypi/dm/axa-fr-oidc?logo=pypi&logoColor=white)](https://pypi.org/project/axa-fr-oidc/) |
 
 </div>
 
