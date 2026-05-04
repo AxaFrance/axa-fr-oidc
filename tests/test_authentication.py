@@ -1093,3 +1093,112 @@ def test_validate_sync_dpop_without_http_method(valid_dpop_test_data):
     result = authentication.validate(token, "some_dpop_token", "/api/resource", None)
     assert not result.success
     assert "path and http_method are required for DPoP validation" in result.error
+
+
+def test_normalize_scope_claim_none():
+    """Test that None scope claim returns an empty list."""
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=[],
+        api_audience=None,
+        service=Mock(XHttpServiceGet),
+        memory_cache=MemoryCache(),
+    )
+    assert authentication._normalize_scope_claim(None) == []
+
+
+def test_normalize_scope_claim_empty_string():
+    """Test that an empty string scope claim returns an empty list."""
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=[],
+        api_audience=None,
+        service=Mock(XHttpServiceGet),
+        memory_cache=MemoryCache(),
+    )
+    assert authentication._normalize_scope_claim("") == []
+
+
+def test_normalize_scope_claim_single_scope_string():
+    """Test that a single scope string returns a one-element list."""
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=[],
+        api_audience=None,
+        service=Mock(XHttpServiceGet),
+        memory_cache=MemoryCache(),
+    )
+    assert authentication._normalize_scope_claim("api") == ["api"]
+
+
+def test_normalize_scope_claim_space_separated_string():
+    """Test that a space-separated scope string is split correctly."""
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=[],
+        api_audience=None,
+        service=Mock(XHttpServiceGet),
+        memory_cache=MemoryCache(),
+    )
+    assert authentication._normalize_scope_claim("api profile email") == ["api", "profile", "email"]
+
+
+def test_normalize_scope_claim_multiple_spaces():
+    """Test that multiple whitespace characters produce no empty scopes."""
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=[],
+        api_audience=None,
+        service=Mock(XHttpServiceGet),
+        memory_cache=MemoryCache(),
+    )
+    assert authentication._normalize_scope_claim("api  profile") == ["api", "profile"]
+
+
+def test_normalize_scope_claim_list_single():
+    """Test that a list with a single string scope is returned as-is."""
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=[],
+        api_audience=None,
+        service=Mock(XHttpServiceGet),
+        memory_cache=MemoryCache(),
+    )
+    assert authentication._normalize_scope_claim(["api"]) == ["api"]
+
+
+def test_normalize_scope_claim_list_multiple():
+    """Test that a list with multiple string scopes is returned as-is."""
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=[],
+        api_audience=None,
+        service=Mock(XHttpServiceGet),
+        memory_cache=MemoryCache(),
+    )
+    assert authentication._normalize_scope_claim(["api", "profile"]) == ["api", "profile"]
+
+
+def test_normalize_scope_claim_list_mixed_types():
+    """Test that non-string elements in a list are filtered out."""
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=[],
+        api_audience=None,
+        service=Mock(XHttpServiceGet),
+        memory_cache=MemoryCache(),
+    )
+    assert authentication._normalize_scope_claim(["api", 123, None]) == ["api"]
+
+
+def test_normalize_scope_claim_unsupported_type():
+    """Test that unsupported types return an empty list."""
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=[],
+        api_audience=None,
+        service=Mock(XHttpServiceGet),
+        memory_cache=MemoryCache(),
+    )
+    assert authentication._normalize_scope_claim(42) == []
+    assert authentication._normalize_scope_claim({"scope": "api"}) == []

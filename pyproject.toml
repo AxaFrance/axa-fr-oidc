@@ -1,6 +1,6 @@
 [project]
 name = "axa-fr-oidc"
-version = "1.4.0"
+version = "1.4.1"
 description = "Python library for OpenID Connect (OIDC) authentication with DPoP (Demonstrating Proof-of-Possession) support, featuring JWT validation, token caching, and both sync/async operations."
 authors = [
     {name = "Cop Python"}
@@ -17,7 +17,6 @@ keywords = [
     "token-validation",
     "async",
 ]
-
 dependencies = [
     "httpx>=0.28.1,<1.0.0",
     "jwskate>=0.12.2,<1.0.0",
@@ -25,6 +24,11 @@ dependencies = [
     "requests-oauth2client>=1.8.0,<2.0.0",
     "loguru>=0.7.3,<1.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/AxaFrance/axa-fr-oidc"
+Repository = "https://github.com/AxaFrance/axa-fr-oidc"
+"Bug Tracker" = "https://github.com/AxaFrance/axa-fr-oidc/issues"
 
 [tool.uv]
 package = true

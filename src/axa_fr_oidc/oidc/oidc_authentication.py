@@ -346,6 +346,29 @@ class OidcAuthentication(IOidcAuthentication):
         _, token_endpoint = self._get_jwks()
         return token_endpoint
 
+    def _normalize_scope_claim(self, scope_claim: Any) -> list[str]:
+        """Normalize the scope claim from a JWT payload to a list of strings.
+
+        Args:
+            scope_claim: The raw value of the ``scope`` claim. May be a
+                space-separated string, a list of strings, ``None``, or any
+                other type.
+
+        Returns:
+            A list of non-empty scope strings.  Unsupported types and
+            non-string list elements are silently ignored.
+        """
+        if scope_claim is None:
+            return []
+
+        if isinstance(scope_claim, str):
+            return scope_claim.split()
+
+        if isinstance(scope_claim, list):
+            return [scope for scope in scope_claim if isinstance(scope, str)]
+
+        return []
+
     def _validate_access_token(
         self, jwt: SignedJwt, jwks: dict[str, Any], audience: str | None = None
     ) -> AuthenticationResult:
@@ -360,7 +383,7 @@ class OidcAuthentication(IOidcAuthentication):
 
             payload: dict[str, Any] = jwt.claims
             # Check scopes
-            token_scopes = payload.get("scope", "").split(" ")
+            token_scopes = self._normalize_scope_claim(payload.get("scope"))
             for scope in self.scopes:
                 if scope not in token_scopes:
                     return AuthenticationResult(success=False, error=f"Scope '{scope}' not found")
