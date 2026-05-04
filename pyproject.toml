@@ -17,6 +17,7 @@ keywords = [
     "token-validation",
     "async",
 ]
+
 dependencies = [
     "httpx>=0.28.1,<1.0.0",
     "jwskate>=0.12.2,<1.0.0",
