@@ -397,7 +397,6 @@ class OidcAuthentication(IOidcAuthentication):
                 jwt.validate(jwk_key, issuer=self.issuer)
             else:
                 # With audience
-                logger.debug(f"audience validation: issuer : {self.issuer} and audience: {effective_audience}")
                 jwt.validate(jwk_key, issuer=self.issuer, audience=effective_audience)
 
             return AuthenticationResult(success=True, payload=payload)
@@ -640,9 +639,7 @@ class OidcAuthentication(IOidcAuthentication):
         If validation fails due to a missing JWK key, the cache is invalidated
         and a fresh JWKS is fetched before retrying once.
         """
-        logger.debug("get jwks & jwt")
         jwks, _ = await self._get_jwks_async()
-        logger.debug("token validation start")
         result = self._validate_token_and_dpop(token, jwks, dpop, path, http_method, audience)
 
         if self._should_retry_with_fresh_jwks(result):
