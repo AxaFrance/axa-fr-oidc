@@ -260,6 +260,46 @@ async def test_validate_async_jwk_not_found_retries_with_fresh_jwks(valid_token_
     assert call_count == 2  # JWKS was fetched twice
 
 
+@pytest.mark.asyncio
+async def test_validate_succeeds_when_jwks_omits_alg(valid_token_and_jwks):
+    """Microsoft Entra ID JWKS may omit the optional ``alg`` and ``use`` members.
+
+    Validation must still succeed by relying on the ``alg`` declared in the JWT
+    header, mirroring how identity providers like Microsoft Entra publish keys.
+    """
+    http_service_get = Mock(XHttpServiceGet)
+    async_mock = AsyncMock()
+    sync_mock = MagicMock()
+
+    token, jwks = valid_token_and_jwks
+    entra_keys = [{k: v for k, v in key.items() if k not in ("alg", "use")} for key in jwks["keys"]]
+
+    return_value = {
+        "jwks_uri": "jwks_uri",
+        "token_endpoint": "token_endpoint",
+        "keys": entra_keys,
+    }
+
+    async_mock.return_value = return_value
+    sync_mock.return_value = return_value
+
+    http_service_get.get_async = async_mock
+    http_service_get.get = sync_mock
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=["my-api"],
+        api_audience="my-api",
+        service=http_service_get,
+        memory_cache=MemoryCache(),
+    )
+
+    async_result = await authentication.validate_async(token, None)
+    assert async_result.success, async_result.error
+
+    sync_result = authentication.validate(token, None)
+    assert sync_result.success, sync_result.error
+
+
 def test_validate_sync_jwk_not_found_retries_with_fresh_jwks(valid_token_and_jwks):
     """Test that validate invalidates cache and retries when JWK key not found."""
     http_service_get = Mock(XHttpServiceGet)

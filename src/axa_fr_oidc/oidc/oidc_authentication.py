@@ -383,7 +383,8 @@ class OidcAuthentication(IOidcAuthentication):
             if jwk_key is None:
                 return AuthenticationResult(success=False, error=ERROR_JWK_NOT_FOUND)
 
-            if jwt.headers.get("alg", "").upper() not in self.algorithms:
+            token_alg = jwt.headers.get("alg", "")
+            if token_alg.upper() not in self.algorithms:
                 return AuthenticationResult(success=False, error="Wrong algorithm used")
 
             payload: dict[str, Any] = jwt.claims
@@ -396,13 +397,17 @@ class OidcAuthentication(IOidcAuthentication):
             # Resolve effective audience: parameter takes precedence over configured value
             effective_audience = audience if audience is not None else self.api_audience
 
+            # Pass the JWT header ``alg`` explicitly so that JWKS keys without an
+            # ``alg`` parameter (as returned by Microsoft Entra ID) can be used
+            # for signature verification. Without this, jwskate raises an error
+            # complaining that the key has no ``alg`` parameter.
             # Standard validation (exp, iss, aud, etc.)
             if not effective_audience:
                 # Without audience
-                jwt.validate(jwk_key, issuer=self.issuer)
+                jwt.validate(jwk_key, alg=token_alg, issuer=self.issuer)
             else:
                 # With audience
-                jwt.validate(jwk_key, issuer=self.issuer, audience=effective_audience)
+                jwt.validate(jwk_key, alg=token_alg, issuer=self.issuer, audience=effective_audience)
 
             return AuthenticationResult(success=True, payload=payload)
 
