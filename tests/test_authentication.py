@@ -7,7 +7,7 @@ import pytest
 from axa_fr_oidc.constants import ERROR_JWK_NOT_FOUND
 from axa_fr_oidc.http_service.http_service import XHttpServiceGet
 from axa_fr_oidc.memory_cache.memory_cache import MemoryCache
-from axa_fr_oidc.oidc.oidc_authentication import OidcAuthentication
+from axa_fr_oidc.oidc.oidc_authentication import OidcAuthentication, find_jwk
 
 
 @pytest.mark.asyncio
@@ -1202,3 +1202,97 @@ def test_normalize_scope_claim_unsupported_type():
     )
     assert authentication._normalize_scope_claim(42) == []
     assert authentication._normalize_scope_claim({"scope": "api"}) == []
+
+
+def _make_jwt(kid):
+    headers = {"kid": kid}
+    jwt_mock = Mock()
+    jwt_mock.headers = headers
+    return jwt_mock
+
+
+def test_find_jwk_returns_full_key_when_all_fields_present():
+    jwks = {
+        "keys": [
+            {
+                "kty": "RSA",
+                "kid": "key-1",
+                "use": "sig",
+                "alg": "RS256",
+                "n": "n-value",
+                "e": "AQAB",
+            }
+        ]
+    }
+    result = find_jwk(jwks, _make_jwt("key-1"))
+    assert result == {
+        "kty": "RSA",
+        "kid": "key-1",
+        "n": "n-value",
+        "e": "AQAB",
+        "use": "sig",
+        "alg": "RS256",
+    }
+
+
+def test_find_jwk_supports_microsoft_entra_keys_without_alg_and_use():
+    """Microsoft Entra ID JWKS may omit the optional ``alg`` and ``use`` fields.
+
+    Per RFC 7517 only ``kty`` is mandatory; the library must therefore not
+    assume those optional members are present in the JWK.
+    """
+    jwks = {
+        "keys": [
+            {
+                "kty": "RSA",
+                "kid": "entra-key",
+                "n": "n-value",
+                "e": "AQAB",
+            }
+        ]
+    }
+    result = find_jwk(jwks, _make_jwt("entra-key"))
+    assert result == {
+        "kty": "RSA",
+        "kid": "entra-key",
+        "n": "n-value",
+        "e": "AQAB",
+    }
+    assert "alg" not in result
+    assert "use" not in result
+
+
+def test_find_jwk_preserves_partial_optional_fields():
+    jwks = {
+        "keys": [
+            {
+                "kty": "RSA",
+                "kid": "partial-key",
+                "use": "sig",
+                "n": "n-value",
+                "e": "AQAB",
+            }
+        ]
+    }
+    result = find_jwk(jwks, _make_jwt("partial-key"))
+    assert result == {
+        "kty": "RSA",
+        "kid": "partial-key",
+        "use": "sig",
+        "n": "n-value",
+        "e": "AQAB",
+    }
+
+
+def test_find_jwk_returns_none_when_kid_does_not_match():
+    jwks = {
+        "keys": [
+            {
+                "kty": "RSA",
+                "kid": "other-key",
+                "n": "n-value",
+                "e": "AQAB",
+            }
+        ]
+    }
+    assert find_jwk(jwks, _make_jwt("missing-key")) is None

@@ -41,21 +41,26 @@ class AuthenticationResult:
 
 
 def find_jwk(jwks: dict[str, Any], jwt: SignedJwt) -> dict[str, Any] | None:
-    """Find in the JWKS the key matching the 'kid' of the token (Access Token)."""
-    jwk_key: dict[str, Any] | None = None
+    """Find in the JWKS the key matching the 'kid' of the token (Access Token).
+
+    Per RFC 7517, only ``kty`` is mandatory in a JWK. Identity providers such
+    as Microsoft Entra ID may omit the optional ``alg`` and ``use`` parameters.
+    Those fields are therefore copied only when present, ensuring compatibility
+    with a wider range of OpenID Connect providers.
+    """
+    target_kid = jwt.headers.get("kid")
     jwks_keys: list[dict[str, Any]] = jwks["keys"]
+    required_fields = ("kty", "kid", "n", "e")
+    optional_fields = ("use", "alg")
     for key in jwks_keys:
-        if key["kid"] == jwt.headers.get("kid"):
-            jwk_key = {
-                "kty": key["kty"],
-                "kid": key["kid"],
-                "use": key["use"],
-                "alg": key["alg"],
-                "n": key["n"],
-                "e": key["e"],
-            }
-            break
-    return jwk_key
+        if key.get("kid") != target_kid:
+            continue
+        jwk_key = {field: key[field] for field in required_fields}
+        for field in optional_fields:
+            if field in key:
+                jwk_key[field] = key[field]
+        return jwk_key
+    return None
 
 
 class IOidcAuthentication(abc.ABC):
