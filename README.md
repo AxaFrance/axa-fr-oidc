@@ -34,6 +34,7 @@ A Python library for OpenID Connect (OIDC) authentication with DPoP (Demonstrati
   - [Custom Configuration](#custom-configuration)
     - [Using OidcClient](#using-oidcclient)
     - [Using Low-Level API](#using-low-level-api)
+  - [Custom Token Validation with handle\_validation](#custom-token-validation-with-handle_validation)
 - [API Reference](#api-reference)
   - [High-Level Client (Recommended)](#high-level-client-recommended)
   - [Low-Level Classes](#low-level-classes)
@@ -499,6 +500,70 @@ auth = OidcAuthentication(
 )
 ```
 
+### Custom Token Validation with handle_validation
+
+The `handle_validation` parameter allows you to dynamically customize which scopes and audience are checked during token validation, based on the token payload itself.
+
+This is useful when:
+- Different tokens require different scopes depending on their claims
+- The audience to validate depends on the token content
+- You need multi-tenant validation logic
+
+```python
+from axa_fr_oidc import OidcClient
+from axa_fr_oidc.oidc.oidc_authentication import HandleValidationResult
+
+def custom_validation(payload: dict) -> HandleValidationResult:
+    """Customize scopes and audience based on the token payload."""
+    # Example: different scopes based on a custom claim
+    if payload.get("tenant") == "admin":
+        return HandleValidationResult(scopes=["admin", "read", "write"], aud="admin-api")
+    return HandleValidationResult(scopes=["read"], aud="user-api")
+
+client = OidcClient(
+    issuer="https://issuer.url",
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    scopes=["read"],  # Default scopes (used if handle_validation is not provided)
+    audience="user-api",  # Default audience (used if handle_validation is not provided)
+    handle_validation=custom_validation,
+)
+
+result = client.validate_token(access_token)
+```
+
+You can also use it with the low-level API:
+
+```python
+from axa_fr_oidc import OidcAuthentication, MemoryCache, XHttpServiceGet
+from axa_fr_oidc.oidc.oidc_authentication import HandleValidationResult
+from httpx import AsyncClient, Client
+
+def custom_validation(payload: dict) -> HandleValidationResult:
+    """Return None for aud to skip audience validation entirely."""
+    return HandleValidationResult(scopes=payload.get("scope", "").split(), aud=None)
+
+auth = OidcAuthentication(
+    issuer="https://issuer.url",
+    scopes=["default-scope"],  # Ignored when handle_validation is provided
+    api_audience="default-audience",  # Ignored when handle_validation is provided
+    service=XHttpServiceGet(
+        http_client=Client(),
+        http_async_client=AsyncClient()
+    ),
+    memory_cache=MemoryCache(),
+    handle_validation=custom_validation,
+)
+
+result = auth.validate(access_token, None)
+```
+
+The `HandleValidationResult` dataclass has the following fields:
+- **`scopes`** (`list[str]`) — The list of scopes to require in the token.
+- **`aud`** (`str | None`) — The audience to validate. Set to `None` to skip audience validation.
+
+For more details, see the [Custom Validation Guide](./docs/custom-validation.md).
+
 ## API Reference
 
 ### High-Level Client (Recommended)
@@ -520,6 +585,7 @@ auth = OidcAuthentication(
 - **`XHttpServiceGet`** - HTTP service wrapper for sync/async requests
 - **`JWTAuthorization`** - Utility for extracting JWT claims
 - **`AuthenticationResult`** - Result object from validation operations
+- **`HandleValidationResult`** - Result object returned by custom `handle_validation` callbacks
 
 ### Interfaces
 
