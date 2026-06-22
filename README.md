@@ -504,6 +504,7 @@ auth = OidcAuthentication(
 
 The `handle_validation` parameter allows you to dynamically customize which scopes and audience are checked during token validation, based on the token payload itself.
 
+> Note: `handle_validation` is invoked before the token signature and standard claims are validated. Treat `payload` as untrusted until validation succeeds, and avoid side effects based on it.
 This is useful when:
 - Different tokens require different scopes depending on their claims
 - The audience to validate depends on the token content
