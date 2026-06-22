@@ -414,8 +414,8 @@ class OidcAuthentication(IOidcAuthentication):
             handle_validation = self.handle_validation(payload)
 
             # Check scopes
-            token_scopes = payload.get("scope", "").split(" ")
-            auth_scopes = handle_validation.scopes or self.scopes
+            token_scopes = self._normalize_scope_claim(payload.get("scope"))
+            auth_scopes = handle_validation.scopes
             for scope in auth_scopes:
                 if scope not in token_scopes:
                     return AuthenticationResult(success=False, error=f"Scope '{scope}' not found")

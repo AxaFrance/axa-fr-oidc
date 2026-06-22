@@ -1419,6 +1419,44 @@ async def test_handle_validation_overrides_scopes_fails(valid_token_and_jwks):
 
 
 @pytest.mark.asyncio
+async def test_handle_validation_can_require_no_scopes(valid_token_and_jwks):
+    """Test that handle_validation can bypass scope checks by returning an empty list."""
+
+    http_service_get = Mock(XHttpServiceGet)
+    async_mock = AsyncMock()
+    sync_mock = MagicMock()
+
+    token, jwks = valid_token_and_jwks
+
+    return_value = {
+        "jwks_uri": "jwks_uri",
+        "token_endpoint": "token_endpoint",
+        "keys": jwks["keys"],
+    }
+
+    async_mock.return_value = return_value
+    sync_mock.return_value = return_value
+
+    http_service_get.get_async = async_mock
+    http_service_get.get = sync_mock
+
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=["nonexistent-scope"],
+        api_audience="my-api",
+        service=http_service_get,
+        memory_cache=MemoryCache(),
+        handle_validation=lambda payload: HandleValidationResult(scopes=[], aud="my-api"),
+    )
+
+    result = await authentication.validate_async(token, None)
+    assert result.success
+
+    result = authentication.validate(token, None)
+    assert result.success
+
+
+@pytest.mark.asyncio
 async def test_handle_validation_overrides_audience(valid_token_and_jwks):
     """Test that handle_validation can override the audience to check."""
 
