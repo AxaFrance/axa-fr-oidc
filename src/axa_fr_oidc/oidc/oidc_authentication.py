@@ -43,7 +43,7 @@ class AuthenticationResult:
 
 @dataclass
 class HandleValidationResult:
-    """Result of an authentication validation operation.
+    """Result returned by the `handle_validation` callback.
 
     Attributes:
         scopes: List of scopes required for the token.
