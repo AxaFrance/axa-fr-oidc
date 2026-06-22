@@ -198,7 +198,7 @@ class OidcAuthentication(IOidcAuthentication):
         memory_cache: IMemoryCache,
         algorithms: list[str] | None = None,
         issuer_cache_expiration_seconds: int = DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
-        handle_validation: Callable[[dict], HandleValidationResult] | None = None,
+        handle_validation: Callable[[dict[str, Any]], HandleValidationResult] | None = None,
     ) -> None:
         """Initialize the OIDC authentication handler.
 
