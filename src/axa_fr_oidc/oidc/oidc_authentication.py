@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,6 +39,19 @@ class AuthenticationResult:
     success: bool
     error: str = ""
     payload: dict[str, Any] | None = None
+
+
+@dataclass
+class HandleValidationResult:
+    """Result of an authentication validation operation.
+
+    Attributes:
+        scopes: List of scopes required for the token.
+        aud: Expected audience claim value, or None if not applicable.
+    """
+
+    scopes: list[str]
+    aud: str | None
 
 
 def find_jwk(jwks: dict[str, Any], jwt: SignedJwt) -> dict[str, Any] | None:
@@ -184,6 +198,7 @@ class OidcAuthentication(IOidcAuthentication):
         memory_cache: IMemoryCache,
         algorithms: list[str] | None = None,
         issuer_cache_expiration_seconds: int = DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
+        handle_validation: Callable[[dict], HandleValidationResult] | None = None,
     ) -> None:
         """Initialize the OIDC authentication handler.
 
@@ -197,6 +212,9 @@ class OidcAuthentication(IOidcAuthentication):
             issuer_cache_expiration_seconds: Time-to-live in seconds for the
                 JWKS and token_endpoint cache. Defaults to
                 DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS (1 hour).
+            handle_validation: Optional callable to handle token validation
+                results. If provided, it should accept a dictionary of token
+                claims and return a HandleValidationResult.
         """
         if algorithms is None:
             algorithms = SUPPORTED_ALGORITHMS
@@ -210,6 +228,11 @@ class OidcAuthentication(IOidcAuthentication):
         self.memory_cache = memory_cache
         self.issuer_cache_expiration_seconds = issuer_cache_expiration_seconds
         self.used_jti: dict[str, float] = {}
+
+        if handle_validation is None:
+            self.handle_validation = lambda payload: HandleValidationResult(scopes=self.scopes, aud=self.api_audience)
+        else:
+            self.handle_validation = handle_validation
 
     @property
     def api_audience(self) -> str | None:
@@ -388,15 +411,17 @@ class OidcAuthentication(IOidcAuthentication):
                 return AuthenticationResult(success=False, error="Wrong algorithm used")
 
             payload: dict[str, Any] = jwt.claims
+            handle_validation = self.handle_validation(payload)
+
             # Check scopes
-            token_scopes = self._normalize_scope_claim(payload.get("scope"))
-            for scope in self.scopes:
+            token_scopes = payload.get("scope", "").split(" ")
+            auth_scopes = handle_validation.scopes or self.scopes
+            for scope in auth_scopes:
                 if scope not in token_scopes:
                     return AuthenticationResult(success=False, error=f"Scope '{scope}' not found")
 
             # Resolve effective audience: parameter takes precedence over configured value
-            effective_audience = audience if audience is not None else self.api_audience
-
+            effective_audience = audience if audience is not None else handle_validation.aud
             # Pass the JWT header ``alg`` explicitly so that JWKS keys without an
             # ``alg`` parameter (as returned by Microsoft Entra ID) can be used
             # for signature verification. Without this, jwskate raises an error

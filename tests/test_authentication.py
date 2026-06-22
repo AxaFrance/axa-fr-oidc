@@ -7,7 +7,7 @@ import pytest
 from axa_fr_oidc.constants import ERROR_JWK_NOT_FOUND
 from axa_fr_oidc.http_service.http_service import XHttpServiceGet
 from axa_fr_oidc.memory_cache.memory_cache import MemoryCache
-from axa_fr_oidc.oidc.oidc_authentication import OidcAuthentication, find_jwk
+from axa_fr_oidc.oidc.oidc_authentication import HandleValidationResult, OidcAuthentication, find_jwk
 
 
 @pytest.mark.asyncio
@@ -1336,3 +1336,283 @@ def test_find_jwk_returns_none_when_kid_does_not_match():
         ]
     }
     assert find_jwk(jwks, _make_jwt("missing-key")) is None
+
+
+@pytest.mark.asyncio
+async def test_handle_validation_overrides_scopes(valid_token_and_jwks):
+    """Test that handle_validation can override the scopes to check."""
+
+    http_service_get = Mock(XHttpServiceGet)
+    async_mock = AsyncMock()
+    sync_mock = MagicMock()
+
+    token, jwks = valid_token_and_jwks
+
+    return_value = {
+        "jwks_uri": "jwks_uri",
+        "token_endpoint": "token_endpoint",
+        "keys": jwks["keys"],
+    }
+
+    async_mock.return_value = return_value
+    sync_mock.return_value = return_value
+
+    http_service_get.get_async = async_mock
+    http_service_get.get = sync_mock
+
+    # handle_validation returns a scope that IS in the token ("my-api")
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=["nonexistent-scope"],  # Would fail without handle_validation
+        api_audience="my-api",
+        service=http_service_get,
+        memory_cache=MemoryCache(),
+        handle_validation=lambda payload: HandleValidationResult(scopes=["my-api"], aud="my-api"),
+    )
+
+    result = await authentication.validate_async(token, None)
+    assert result.success
+
+    result = authentication.validate(token, None)
+    assert result.success
+
+
+@pytest.mark.asyncio
+async def test_handle_validation_overrides_scopes_fails(valid_token_and_jwks):
+    """Test that handle_validation scope override causes failure when scope is missing."""
+
+    http_service_get = Mock(XHttpServiceGet)
+    async_mock = AsyncMock()
+    sync_mock = MagicMock()
+
+    token, jwks = valid_token_and_jwks
+
+    return_value = {
+        "jwks_uri": "jwks_uri",
+        "token_endpoint": "token_endpoint",
+        "keys": jwks["keys"],
+    }
+
+    async_mock.return_value = return_value
+    sync_mock.return_value = return_value
+
+    http_service_get.get_async = async_mock
+    http_service_get.get = sync_mock
+
+    # handle_validation returns a scope NOT in the token
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=["my-api"],  # Would succeed without handle_validation
+        api_audience="my-api",
+        service=http_service_get,
+        memory_cache=MemoryCache(),
+        handle_validation=lambda payload: HandleValidationResult(scopes=["admin-scope"], aud="my-api"),
+    )
+
+    result = await authentication.validate_async(token, None)
+    assert not result.success
+    assert "Scope 'admin-scope' not found" in result.error
+
+    result = authentication.validate(token, None)
+    assert not result.success
+    assert "Scope 'admin-scope' not found" in result.error
+
+
+@pytest.mark.asyncio
+async def test_handle_validation_overrides_audience(valid_token_and_jwks):
+    """Test that handle_validation can override the audience to check."""
+
+    http_service_get = Mock(XHttpServiceGet)
+    async_mock = AsyncMock()
+    sync_mock = MagicMock()
+
+    token, jwks = valid_token_and_jwks
+
+    return_value = {
+        "jwks_uri": "jwks_uri",
+        "token_endpoint": "token_endpoint",
+        "keys": jwks["keys"],
+    }
+
+    async_mock.return_value = return_value
+    sync_mock.return_value = return_value
+
+    http_service_get.get_async = async_mock
+    http_service_get.get = sync_mock
+
+    # handle_validation overrides audience to match the token's aud ("my-api")
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=["my-api"],
+        api_audience="wrong-audience",  # Would fail without handle_validation
+        service=http_service_get,
+        memory_cache=MemoryCache(),
+        handle_validation=lambda payload: HandleValidationResult(scopes=["my-api"], aud="my-api"),
+    )
+
+    result = await authentication.validate_async(token, None)
+    assert result.success
+
+    result = authentication.validate(token, None)
+    assert result.success
+
+
+@pytest.mark.asyncio
+async def test_handle_validation_overrides_audience_fails(valid_token_and_jwks):
+    """Test that handle_validation audience override causes failure when audience doesn't match."""
+
+    http_service_get = Mock(XHttpServiceGet)
+    async_mock = AsyncMock()
+    sync_mock = MagicMock()
+
+    token, jwks = valid_token_and_jwks
+
+    return_value = {
+        "jwks_uri": "jwks_uri",
+        "token_endpoint": "token_endpoint",
+        "keys": jwks["keys"],
+    }
+
+    async_mock.return_value = return_value
+    sync_mock.return_value = return_value
+
+    http_service_get.get_async = async_mock
+    http_service_get.get = sync_mock
+
+    # handle_validation returns wrong audience
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=["my-api"],
+        api_audience="my-api",  # Would succeed without handle_validation
+        service=http_service_get,
+        memory_cache=MemoryCache(),
+        handle_validation=lambda payload: HandleValidationResult(scopes=["my-api"], aud="wrong-audience"),
+    )
+
+    result = await authentication.validate_async(token, None)
+    assert not result.success
+    assert "Unexpected audience" in result.error
+
+    result = authentication.validate(token, None)
+    assert not result.success
+    assert "Unexpected audience" in result.error
+
+
+@pytest.mark.asyncio
+async def test_handle_validation_returns_none_aud_skips_audience_check(valid_token_and_jwks_no_audience):
+    """Test that handle_validation returning None aud skips audience validation."""
+
+    http_service_get = Mock(XHttpServiceGet)
+    async_mock = AsyncMock()
+    sync_mock = MagicMock()
+
+    token, jwks = valid_token_and_jwks_no_audience
+
+    return_value = {
+        "jwks_uri": "jwks_uri",
+        "token_endpoint": "token_endpoint",
+        "keys": jwks["keys"],
+    }
+
+    async_mock.return_value = return_value
+    sync_mock.return_value = return_value
+
+    http_service_get.get_async = async_mock
+    http_service_get.get = sync_mock
+
+    # handle_validation returns None aud, skipping audience check
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=["my-api"],
+        api_audience="some-audience",  # Would fail without handle_validation
+        service=http_service_get,
+        memory_cache=MemoryCache(),
+        handle_validation=lambda payload: HandleValidationResult(scopes=["my-api"], aud=None),
+    )
+
+    result = await authentication.validate_async(token, None)
+    assert result.success
+
+    result = authentication.validate(token, None)
+    assert result.success
+
+
+@pytest.mark.asyncio
+async def test_handle_validation_uses_payload_to_decide(valid_token_and_jwks):
+    """Test that handle_validation receives the token payload and can use it."""
+
+    http_service_get = Mock(XHttpServiceGet)
+    async_mock = AsyncMock()
+    sync_mock = MagicMock()
+
+    token, jwks = valid_token_and_jwks
+
+    return_value = {
+        "jwks_uri": "jwks_uri",
+        "token_endpoint": "token_endpoint",
+        "keys": jwks["keys"],
+    }
+
+    async_mock.return_value = return_value
+    sync_mock.return_value = return_value
+
+    http_service_get.get_async = async_mock
+    http_service_get.get = sync_mock
+
+    received_payloads = []
+
+    def custom_handle_validation(payload):
+        received_payloads.append(payload)
+        # Use the token's own scope claim to determine required scopes
+        token_scope = payload.get("scope", "")
+        return HandleValidationResult(scopes=token_scope.split(), aud=payload.get("aud"))
+
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=["should-be-ignored"],
+        api_audience="should-be-ignored",
+        service=http_service_get,
+        memory_cache=MemoryCache(),
+        handle_validation=custom_handle_validation,
+    )
+
+    result = await authentication.validate_async(token, None)
+    assert result.success
+    assert len(received_payloads) == 1
+    assert received_payloads[0]["sub"] == "user123"
+    assert received_payloads[0]["scope"] == "my-api"
+
+    result = authentication.validate(token, None)
+    assert result.success
+    assert len(received_payloads) == 2
+
+
+@pytest.mark.asyncio
+async def test_handle_validation_default_uses_configured_scopes_and_audience(valid_token_and_jwks):
+    """Test that without handle_validation, configured scopes and api_audience are used."""
+
+    http_service_get = Mock(XHttpServiceGet)
+    async_mock = AsyncMock()
+
+    token, jwks = valid_token_and_jwks
+
+    return_value = {
+        "jwks_uri": "jwks_uri",
+        "token_endpoint": "token_endpoint",
+        "keys": jwks["keys"],
+    }
+
+    async_mock.return_value = return_value
+    http_service_get.get_async = async_mock
+
+    # No handle_validation provided - should use scopes=["my-api"] and api_audience="my-api"
+    authentication = OidcAuthentication(
+        issuer="fake_issuer",
+        scopes=["my-api"],
+        api_audience="my-api",
+        service=http_service_get,
+        memory_cache=MemoryCache(),
+    )
+
+    result = await authentication.validate_async(token, None)
+    assert result.success
