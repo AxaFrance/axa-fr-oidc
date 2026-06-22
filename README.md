@@ -539,7 +539,7 @@ The `HandleValidationResult` dataclass has the following fields:
 - **`scopes`** (`list[str]`) — The list of scopes to require in the token.
 - **`aud`** (`str | None`) — The audience to validate. Set to `None` to skip audience validation.
 
-For more details, see the [Custom Validation Guide](./docs/custom-validation.md).
+For more details, see the examples above.
 
 ## API Reference
 
