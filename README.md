@@ -509,30 +509,7 @@ This is useful when:
 - The audience to validate depends on the token content
 - You need multi-tenant validation logic
 
-```python
-from axa_fr_oidc import OidcClient
-from axa_fr_oidc.oidc.oidc_authentication import HandleValidationResult
-
-def custom_validation(payload: dict) -> HandleValidationResult:
-    """Customize scopes and audience based on the token payload."""
-    # Example: different scopes based on a custom claim
-    if payload.get("tenant") == "admin":
-        return HandleValidationResult(scopes=["admin", "read", "write"], aud="admin-api")
-    return HandleValidationResult(scopes=["read"], aud="user-api")
-
-client = OidcClient(
-    issuer="https://issuer.url",
-    client_id="your-client-id",
-    client_secret="your-client-secret",
-    scopes=["read"],  # Default scopes (used if handle_validation is not provided)
-    audience="user-api",  # Default audience (used if handle_validation is not provided)
-    handle_validation=custom_validation,
-)
-
-result = client.validate_token(access_token)
-```
-
-You can also use it with the low-level API:
+Use it with the low-level API:
 
 ```python
 from axa_fr_oidc import OidcAuthentication, MemoryCache, XHttpServiceGet
