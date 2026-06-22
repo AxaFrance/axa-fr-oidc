@@ -518,7 +518,7 @@ from axa_fr_oidc.oidc.oidc_authentication import HandleValidationResult
 from httpx import AsyncClient, Client
 
 def custom_validation(payload: dict) -> HandleValidationResult:
-    """Return None for aud to skip audience validation entirely."""
+    """Return aud=None to skip audience validation (unless an audience override is provided)."""
     return HandleValidationResult(scopes=payload.get("scope", "").split(), aud=None)
 
 auth = OidcAuthentication(
