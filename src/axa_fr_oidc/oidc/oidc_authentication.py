@@ -212,9 +212,9 @@ class OidcAuthentication(IOidcAuthentication):
             issuer_cache_expiration_seconds: Time-to-live in seconds for the
                 JWKS and token_endpoint cache. Defaults to
                 DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS (1 hour).
-            handle_validation: Optional callable to handle token validation
-                results. If provided, it should accept a dictionary of token
-                claims and return a HandleValidationResult.
+            handle_validation: Optional callable invoked with the decoded (not yet
+                validated) token claims to determine which scopes and audience
+                should be validated. It must return a HandleValidationResult.
         """
         if algorithms is None:
             algorithms = SUPPORTED_ALGORITHMS
