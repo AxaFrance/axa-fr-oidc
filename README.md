@@ -563,7 +563,7 @@ For more details, see the examples above.
 - **`XHttpServiceGet`** - HTTP service wrapper for sync/async requests
 - **`JWTAuthorization`** - Utility for extracting JWT claims
 - **`AuthenticationResult`** - Result object from validation operations
-- **`HandleValidationResult`** - Result object returned by custom `handle_validation` callbacks
+- **`HandleValidationResult`** (from `axa_fr_oidc.oidc.oidc_authentication`) - Result object returned by custom `handle_validation` callbacks
 
 ### Interfaces
 
