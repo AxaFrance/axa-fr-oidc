@@ -34,6 +34,7 @@ A Python library for OpenID Connect (OIDC) authentication with DPoP (Demonstrati
   - [Custom Configuration](#custom-configuration)
     - [Using OidcClient](#using-oidcclient)
     - [Using Low-Level API](#using-low-level-api)
+  - [Custom Token Validation with handle\_validation](#custom-token-validation-with-handle_validation)
 - [API Reference](#api-reference)
   - [High-Level Client (Recommended)](#high-level-client-recommended)
   - [Low-Level Classes](#low-level-classes)
@@ -499,6 +500,48 @@ auth = OidcAuthentication(
 )
 ```
 
+### Custom Token Validation with handle_validation
+
+The `handle_validation` parameter allows you to dynamically customize which scopes and audience are checked during token validation, based on the token payload itself.
+
+> Note: `handle_validation` is invoked before the token signature and standard claims are validated. Treat `payload` as untrusted until validation succeeds, and avoid side effects based on it.
+This is useful when:
+- Different tokens require different scopes depending on their claims
+- The audience to validate depends on the token content
+- You need multi-tenant validation logic
+
+Use it with the low-level API:
+
+```python
+from axa_fr_oidc import OidcAuthentication, MemoryCache, XHttpServiceGet
+from axa_fr_oidc.oidc.oidc_authentication import HandleValidationResult
+from httpx import AsyncClient, Client
+
+def custom_validation(payload: dict) -> HandleValidationResult:
+    """Return aud=None to skip audience validation (unless an audience override is provided)."""
+    return HandleValidationResult(scopes=payload.get("scope", "").split(), aud=None)
+
+auth = OidcAuthentication(
+    issuer="https://issuer.url",
+    scopes=["default-scope"],  # Ignored when handle_validation is provided
+    api_audience="default-audience",  # Ignored when handle_validation is provided
+    service=XHttpServiceGet(
+        http_client=Client(),
+        http_async_client=AsyncClient()
+    ),
+    memory_cache=MemoryCache(),
+    handle_validation=custom_validation,
+)
+
+result = auth.validate(access_token, None)
+```
+
+The `HandleValidationResult` dataclass has the following fields:
+- **`scopes`** (`list[str]`) — The list of scopes to require in the token.
+- **`aud`** (`str | None`) — The audience to validate. Set to `None` to skip audience validation.
+
+For more details, see the examples above.
+
 ## API Reference
 
 ### High-Level Client (Recommended)
@@ -520,6 +563,7 @@ auth = OidcAuthentication(
 - **`XHttpServiceGet`** - HTTP service wrapper for sync/async requests
 - **`JWTAuthorization`** - Utility for extracting JWT claims
 - **`AuthenticationResult`** - Result object from validation operations
+- **`HandleValidationResult`** (from `axa_fr_oidc.oidc.oidc_authentication`) - Result object returned by custom `handle_validation` callbacks
 
 ### Interfaces
 
