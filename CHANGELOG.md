@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.6]
+
+### Fixed
+- Use `uuid.uuid4()` instead of the current epoch second for the `jti` claim of
+  outbound client assertions (private-key JWT and `client_secret_jwt`). The
+  previous one-second resolution could produce duplicate `jti` values when
+  multiple assertions were generated within the same second, which violates
+  RFC 7523 §3 and could cause sporadic `invalid_client` / `invalid_request`
+  errors from authorization servers that treat repeated `jti` values as replay
+  attempts (#11).
+
 ## [1.3.0] - 2026-03-11
 
 ### Added
