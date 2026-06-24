@@ -1,11 +1,17 @@
 import uuid
 
+import jwt
 import pytest
 import requests
 from requests_oauth2client import BearerToken
 
 from axa_fr_oidc.memory_cache.memory_cache import MemoryCache
-from axa_fr_oidc.oidc.openid_connect import OpenIdConnect, _get_access_token
+from axa_fr_oidc.oidc.openid_connect import (
+    OpenIdConnect,
+    _get_access_token,
+    _get_client_secret_access_token,
+    _get_private_key_access_token,
+)
 
 from .conftest import FakeAuthentication, FakeBadAuthentication
 
@@ -307,3 +313,75 @@ def test_oidc_get_token_returns_none_on_validation_failure(mocker):
 
     token = oidc.get_access_token()
     assert token is None
+
+
+def _capture_client_assertions(monkeypatch):
+    """Capture the ``client_assertion`` posted to the token endpoint.
+
+    Returns a list that will be populated with each assertion seen by the
+    fake ``requests.post`` call.
+    """
+    captured: list[str] = []
+
+    def fake_post(url, data, headers, timeout=None, auth=None):
+        captured.append(data["client_assertion"])
+
+        class Resp:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"access_token": "FAKE_ACCESS_TOKEN"}
+
+        return Resp()
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    return captured
+
+
+def test_private_key_jti_is_unique_uuid(monkeypatch, fake_private_key_pem):
+    """Two successive private-key assertions must have distinct UUID ``jti`` values.
+
+    Regression test for the bug where ``jti`` was derived from ``int(time.time())``
+    and could collide within the same second.
+    """
+    captured = _capture_client_assertions(monkeypatch)
+
+    for _ in range(2):
+        _get_private_key_access_token(
+            "https://test/token",
+            "client_id",
+            fake_private_key_pem,
+            ["scope1"],
+            "RS256",
+        )
+
+    assert len(captured) == 2
+    jtis = [jwt.decode(a, options={"verify_signature": False})["jti"] for a in captured]
+    assert jtis[0] != jtis[1]
+    for value in jtis:
+        # Must parse as a UUID4 string.
+        parsed = uuid.UUID(value)
+        assert parsed.version == 4
+
+
+def test_client_secret_jwt_jti_is_unique_uuid(monkeypatch):
+    """Two successive client_secret_jwt assertions must have distinct UUID ``jti`` values."""
+    captured = _capture_client_assertions(monkeypatch)
+
+    for _ in range(2):
+        _get_client_secret_access_token(
+            "https://test/token",
+            "client_id",
+            "client_secret",
+            ["scope1"],
+        )
+
+    assert len(captured) == 2
+    jtis = [jwt.decode(a, options={"verify_signature": False})["jti"] for a in captured]
+    assert jtis[0] != jtis[1]
+    for value in jtis:
+        parsed = uuid.UUID(value)
+        assert parsed.version == 4

@@ -50,11 +50,13 @@ def _get_private_key_access_token(
     # Build JWT client assertion
     now = int(time.time())
 
+    # Use a UUID4 for ``jti`` to guarantee uniqueness even when multiple
+    # assertions are generated within the same second (RFC 7523 §3).
     payload: dict[str, Any] = {
         "iss": client_id,
         "sub": client_id,
         "aud": token_endpoint,
-        "jti": str(now),
+        "jti": str(uuid.uuid4()),
         "iat": now,
         "exp": now + DEFAULT_JWT_EXPIRATION_SECONDS,
     }
@@ -129,11 +131,13 @@ def _get_client_secret_access_token(
         # Build a standards-compliant JWT assertion signed with the client
         # secret (RFC 7523 §2.2 / client_secret_jwt).
         now = int(time.time())
+        # Use a UUID4 for ``jti`` to guarantee uniqueness even when multiple
+        # assertions are generated within the same second (RFC 7523 §3).
         payload: dict[str, Any] = {
             "iss": client_id,
             "sub": client_id,
             "aud": token_endpoint,
-            "jti": str(now),
+            "jti": str(uuid.uuid4()),
             "iat": now,
             "exp": now + DEFAULT_JWT_EXPIRATION_SECONDS,
         }
