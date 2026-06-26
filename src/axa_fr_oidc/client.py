@@ -130,7 +130,7 @@ class OidcClient:
         self.client_id = client_id
         self.client_secret = client_secret
         self.private_key = private_key
-        self.scopes = scopes or ["openid"]
+        self.scopes = scopes or []
         self.audience = audience
         self.algorithm = algorithm
         self.algorithms = algorithms or SUPPORTED_ALGORITHMS
