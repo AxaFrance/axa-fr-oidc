@@ -65,14 +65,15 @@ class OidcClient:
 
     Attributes:
         issuer: The OIDC issuer URL.
-        client_id: The OAuth2 client identifier.
+        client_id: The OAuth2 client identifier. Optional when the client is
+            only used for access token validation.
         scopes: List of OAuth2 scopes to request.
     """
 
     def __init__(
         self,
         issuer: str,
-        client_id: str,
+        client_id: str | None = None,
         client_secret: str | None = None,
         private_key: str | None = None,
         scopes: list[str] | None = None,
@@ -91,7 +92,8 @@ class OidcClient:
 
         Args:
             issuer: The OIDC issuer URL (e.g., "https://auth.example.com").
-            client_id: The OAuth2 client identifier.
+            client_id: The OAuth2 client identifier. Optional when only
+                validating access tokens.
             client_secret: The client secret for client credentials flow.
                 Either client_secret or private_key must be provided for
                 token retrieval.
@@ -130,7 +132,7 @@ class OidcClient:
         self.client_id = client_id
         self.client_secret = client_secret
         self.private_key = private_key
-        self.scopes = scopes or []
+        self.scopes = ["openid"] if scopes is None else scopes
         self.audience = audience
         self.algorithm = algorithm
         self.algorithms = algorithms or SUPPORTED_ALGORITHMS
@@ -212,9 +214,12 @@ class OidcClient:
             The OpenID Connect instance.
 
         Raises:
+            ValueError: If client_id is not provided for token retrieval operations.
             ValueError: If neither client_secret nor private_key is provided, or if both are provided.
         """
         if self._openid_connect is None:
+            if self.client_id is None:
+                raise ValueError("client_id must be provided for token retrieval operations.")
             if self.client_secret is None and self.private_key is None:
                 raise ValueError("Either client_secret or private_key must be provided for token retrieval operations.")
             if self.client_secret is not None and self.private_key is not None:

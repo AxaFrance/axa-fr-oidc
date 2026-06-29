@@ -1,6 +1,6 @@
 [project]
 name = "axa-fr-oidc"
-version = "1.4.7"
+version = "1.4.8"
 description = "Python library for OpenID Connect (OIDC) authentication with DPoP (Demonstrating Proof-of-Possession) support, featuring JWT validation, token caching, and both sync/async operations."
 authors = [
     {name = "Cop Python"}
