@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- New `OidcValidator` class dedicated to access-token and DPoP-proof
+  validation.  It can be created with just an `issuer` (no client credentials
+  required) and accepts the same flexible `handle_validation` callback as the
+  underlying `OidcAuthentication` (#14).
+- `HandleValidationResult` is now re-exported from the top-level
+  `axa_fr_oidc` package for ergonomic custom-validation setups.
+
+### Changed (breaking)
+- `OidcClient` is now focused exclusively on token retrieval and exchange.
+  - `client_id` is now a required constructor argument.
+  - `audience` argument has been removed (validation lives in
+    `OidcValidator`).
+  - `validate_token()` and `validate_token_async()` have been removed; use
+    `OidcValidator.validate_token()` / `validate_token_async()` instead
+    (#14).
+
 ## [1.4.6]
 
 ### Fixed

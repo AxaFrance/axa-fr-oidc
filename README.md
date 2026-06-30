@@ -79,18 +79,24 @@ pip install axa-fr-oidc
 
 ### Simple Usage with OidcClient (Recommended)
 
-The `OidcClient` provides a simplified, high-level API for common OIDC operations:
+The public surface is split across two focused, single-responsibility classes:
+
+- **`OidcClient`** — retrieve and exchange access tokens.
+- **`OidcValidator`** — validate access tokens (and DPoP proofs).
+
+This split keeps each class small and easy to test.  When a single program
+needs both, the two instances can share the same `http_service` and
+`memory_cache`.
 
 ```python
-from axa_fr_oidc import OidcClient
+from axa_fr_oidc import OidcClient, OidcValidator
 
-# Create a client with client credentials
+# Create a client with client credentials (token retrieval)
 client = OidcClient(
     issuer="https://issuer.url",
     client_id="your-client-id",
     client_secret="your-client-secret",
     scopes=["openid", "profile"],
-    audience="your-api-audience",
 )
 
 # Get an access token (automatically cached and refreshed)
@@ -99,8 +105,12 @@ access_token = client.get_access_token()
 # Force a fresh token from the authorization server (bypasses cache)
 fresh_token = client.get_access_token(force_renew_token=True)
 
-# Validate a token
-result = client.validate_token(access_token)
+# Validate a token using the dedicated validator
+validator = OidcValidator(
+    issuer="https://issuer.url",
+    audience="your-api-audience",
+)
+result = validator.validate_token(access_token)
 if result.success:
     print(f"Token is valid! Subject: {result.payload['sub']}")
 else:
@@ -108,6 +118,7 @@ else:
 
 # Clean up resources
 client.close_sync()
+validator.close_sync()
 ```
 
 #### Using Context Managers
@@ -136,19 +147,22 @@ async with OidcClient(
 
 ```python
 import asyncio
-from axa_fr_oidc import OidcClient
+from axa_fr_oidc import OidcClient, OidcValidator
 
 async def main():
     async with OidcClient(
         issuer="https://issuer.url",
         client_id="your-client-id",
         client_secret="your-client-secret",
-    ) as client:
+    ) as client, OidcValidator(
+        issuer="https://issuer.url",
+        audience="your-api-audience",
+    ) as validator:
         # Async token retrieval
         token = await client.get_access_token_async()
-        
+
         # Async token validation
-        result = await client.validate_token_async(token)
+        result = await validator.validate_token_async(token)
         print(result.success, result.payload)
 
 asyncio.run(main())
@@ -177,15 +191,15 @@ token = client.get_access_token()
 #### Validating DPoP Tokens
 
 ```python
-from axa_fr_oidc import OidcClient
+from axa_fr_oidc import OidcValidator
 
-client = OidcClient(
+validator = OidcValidator(
     issuer="https://issuer.url",
-    client_id="your-client-id",
+    audience="your-api-audience",
 )
 
 # Validate a DPoP-bound token
-result = client.validate_token(
+result = validator.validate_token(
     token=access_token,
     dpop=dpop_proof,
     path="/api/resource",
@@ -471,9 +485,20 @@ client = OidcClient(
     client_id="your-client-id",
     client_secret="your-client-secret",
     scopes=["openid", "profile"],
+    issuer_cache_expiration_seconds=7200,  # Cache token_endpoint for 2 hours (default: 3600)
+)
+```
+
+#### Using OidcValidator
+
+```python
+from axa_fr_oidc import OidcValidator
+
+validator = OidcValidator(
+    issuer="https://issuer.url",
     audience="your-api-audience",
     algorithms=["RS256", "ES256"],  # Allowed algorithms for validation
-    issuer_cache_expiration_seconds=7200,  # Cache JWKS and token_endpoint for 2 hours (default: 3600)
+    issuer_cache_expiration_seconds=7200,  # Cache JWKS for 2 hours (default: 3600)
 )
 ```
 
@@ -546,14 +571,25 @@ For more details, see the examples above.
 
 ### High-Level Client (Recommended)
 
-- **`OidcClient`** - Simplified, all-in-one client for OIDC operations
-  - `get_access_token(force_renew_token=False)` / `get_access_token_async(force_renew_token=False)` - Get an access token (set `force_renew_token=True` to bypass cache)
-  - `validate_token()` / `validate_token_async()` - Validate an access token
-  - `token_exchange()` - Exchange tokens (RFC 8693)
-  - `get_token_endpoint()` / `get_token_endpoint_async()` - Get the token endpoint URL
-  - `clear_cache()` - Clear all cached data
-  - `close()` / `close_sync()` - Release resources
-  - Supports context managers (`with`/`async with`)
+- **`OidcClient`** — High-level client for **token retrieval and exchange**.
+  - `get_access_token(force_renew_token=False)` / `get_access_token_async(force_renew_token=False)` — Get an access token (set `force_renew_token=True` to bypass cache)
+  - `token_exchange()` — Exchange tokens (RFC 8693)
+  - `get_token_endpoint()` / `get_token_endpoint_async()` — Get the token endpoint URL
+  - `clear_cache()` — Clear all cached data
+  - `close()` / `close_sync()` — Release resources
+  - Supports context managers (`with` / `async with`)
+
+- **`OidcValidator`** — High-level validator for **access tokens and DPoP proofs**.
+  - `validate_token(token, dpop=None, path=None, http_method=None, audience=None)` / `validate_token_async(...)` — Validate an access token
+  - `get_token_endpoint()` / `get_token_endpoint_async()` — Get the token endpoint URL
+  - `clear_cache()` — Clear cached JWKS / discovery data
+  - `close()` / `close_sync()` — Release resources
+  - Supports context managers (`with` / `async with`)
+  - Accepts a ``handle_validation`` callback to derive scopes / audience from the token payload at runtime
+
+> **Breaking change (since the previous release):** ``OidcClient`` no longer exposes
+> ``validate_token()`` / ``validate_token_async()``.  Move any validation calls
+> to ``OidcValidator``.
 
 ### Low-Level Classes
 
