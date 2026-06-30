@@ -7,7 +7,6 @@ from axa_fr_oidc.client import OidcClient
 from axa_fr_oidc.constants import DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS, DEFAULT_JWT_ALGORITHM, SUPPORTED_ALGORITHMS
 from axa_fr_oidc.http_service import IHttpServiceGet
 from axa_fr_oidc.memory_cache import IMemoryCache, MemoryCache
-from axa_fr_oidc.oidc import AuthenticationResult
 
 
 class FakeHttpService(IHttpServiceGet):
@@ -74,12 +73,10 @@ class TestOidcClientInitialization:
             client_id="test-client-id",
             client_secret="test-secret",
             scopes=custom_scopes,
-            audience="test-audience",
             algorithms=custom_algorithms,
         )
 
         assert client.scopes == custom_scopes
-        assert client.audience == "test-audience"
         assert client.algorithms == custom_algorithms
 
     def test_init_with_custom_dependencies(self):
@@ -265,6 +262,15 @@ class TestOidcClientProperties:
         # Second access returns same instance
         assert client.openid_connect is oidc
 
+    def test_init_requires_client_id(self):
+        """Test that OidcClient enforces client_id at construction time."""
+        with pytest.raises(TypeError):
+            # client_id is now required (no default value)
+            OidcClient(  # type: ignore[call-arg]
+                issuer="https://test.issuer.com",
+                client_secret="test-secret",
+            )
+
     def test_openid_connect_raises_without_credentials(self):
         """Test that accessing openid_connect raises error without credentials."""
         client = OidcClient(
@@ -412,101 +418,18 @@ class TestOidcClientTokenOperations:
         with pytest.raises(ValueError, match="Either client_secret or private_key"):
             client.get_access_token()
 
-
-class TestOidcClientTokenValidation:
-    """Tests for OidcClient token validation."""
-
-    def test_validate_token_without_client_id(self, mocker):
-        """Test validating a token without providing client_id."""
-        mock_result = AuthenticationResult(True, "", {"sub": "user123"})
-        mocker.patch(
-            "axa_fr_oidc.oidc.oidc_authentication.OidcAuthentication.validate",
-            return_value=mock_result,
-        )
-
-        client = OidcClient(
-            issuer="https://test.issuer.com",
-            http_service=FakeHttpService(),
-        )
-
-        result = client.validate_token("test-token")
-
-        assert client.client_id is None
-        assert result.success is True
-        assert result.payload == {"sub": "user123"}
-
-    def test_validate_token(self, mocker):
-        """Test validating token synchronously."""
-        mock_result = AuthenticationResult(True, "", {"sub": "user123"})
-        mocker.patch(
-            "axa_fr_oidc.oidc.oidc_authentication.OidcAuthentication.validate",
-            return_value=mock_result,
-        )
-
+    def test_client_has_no_validation_methods(self):
+        """OidcClient no longer exposes validation methods (issue #14)."""
         client = OidcClient(
             issuer="https://test.issuer.com",
             client_id="test-client-id",
-            http_service=FakeHttpService(),
-        )
-
-        result = client.validate_token("test-token")
-
-        assert result.success is True
-        assert result.payload == {"sub": "user123"}
-
-    def test_get_access_token_raises_without_client_id(self):
-        """Test that token retrieval still requires client_id."""
-        client = OidcClient(
-            issuer="https://test.issuer.com",
             client_secret="test-secret",
             http_service=FakeHttpService(),
         )
 
-        with pytest.raises(ValueError, match="client_id must be provided"):
-            client.get_access_token()
-
-    @pytest.mark.asyncio
-    async def test_validate_token_async(self, mocker):
-        """Test validating token asynchronously."""
-        mock_result = AuthenticationResult(True, "", {"sub": "user123"})
-        mocker.patch(
-            "axa_fr_oidc.oidc.oidc_authentication.OidcAuthentication.validate_async",
-            return_value=mock_result,
-        )
-
-        client = OidcClient(
-            issuer="https://test.issuer.com",
-            client_id="test-client-id",
-            http_service=FakeHttpService(),
-        )
-
-        result = await client.validate_token_async("test-token")
-
-        assert result.success is True
-        assert result.payload == {"sub": "user123"}
-
-    def test_validate_token_with_dpop(self, mocker):
-        """Test validating DPoP-bound token."""
-        mock_result = AuthenticationResult(True, "", {"sub": "user123", "cnf": {}})
-        mocker.patch(
-            "axa_fr_oidc.oidc.oidc_authentication.OidcAuthentication.validate",
-            return_value=mock_result,
-        )
-
-        client = OidcClient(
-            issuer="https://test.issuer.com",
-            client_id="test-client-id",
-            http_service=FakeHttpService(),
-        )
-
-        result = client.validate_token(
-            token="test-token",
-            dpop="dpop-proof",
-            path="/api/resource",
-            http_method="POST",
-        )
-
-        assert result.success is True
+        # Validation methods now live on OidcValidator only.
+        assert not hasattr(client, "validate_token")
+        assert not hasattr(client, "validate_token_async")
 
 
 class TestOidcClientTokenEndpoint:

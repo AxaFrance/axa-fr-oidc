@@ -1,7 +1,9 @@
 """High-level OIDC client with simplified API.
 
-This module provides a simplified interface for common OIDC operations,
-reducing boilerplate code while still allowing customization when needed.
+This module provides a simplified interface for retrieving and exchanging
+OAuth2/OIDC access tokens.  Token *validation* is intentionally delegated to
+:class:`axa_fr_oidc.validator.OidcValidator` so that each public class
+focuses on a single responsibility.
 """
 
 from typing import Any
@@ -18,7 +20,6 @@ from axa_fr_oidc.constants import (
 from axa_fr_oidc.http_service import IHttpServiceGet, XHttpServiceGet
 from axa_fr_oidc.memory_cache import IMemoryCache, MemoryCache
 from axa_fr_oidc.oidc import (
-    AuthenticationResult,
     IOidcAuthentication,
     IOpenIdConnect,
     OidcAuthentication,
@@ -27,11 +28,18 @@ from axa_fr_oidc.oidc import (
 
 
 class OidcClient:
-    """Simplified OIDC client for common authentication operations.
+    """Simplified OIDC client for retrieving and exchanging access tokens.
 
-    This class provides a high-level, easy-to-use interface for OIDC
-    authentication, token retrieval, and validation. It creates and manages
-    all required dependencies internally while still allowing customization.
+    This class provides a high-level interface for the OAuth2 client
+    credentials flow (with either ``client_secret`` or ``private_key``
+    authentication) and the RFC 8693 token-exchange flow.  It creates and
+    manages all required dependencies internally while still allowing
+    customization.
+
+    .. note::
+        Token *validation* is the responsibility of
+        :class:`axa_fr_oidc.validator.OidcValidator`.  Use that class to
+        verify access tokens received by your API.
 
     Example:
         Basic usage with client credentials:
@@ -57,27 +65,19 @@ class OidcClient:
 
         >>> token = await client.get_access_token_async()
 
-        Token validation:
-
-        >>> result = client.validate_token(access_token)
-        >>> if result.success:
-        ...     print("Token is valid!")
-
     Attributes:
         issuer: The OIDC issuer URL.
-        client_id: The OAuth2 client identifier. Optional when the client is
-            only used for access token validation.
+        client_id: The OAuth2 client identifier (required).
         scopes: List of OAuth2 scopes to request.
     """
 
     def __init__(
         self,
         issuer: str,
-        client_id: str | None = None,
+        client_id: str,
         client_secret: str | None = None,
         private_key: str | None = None,
         scopes: list[str] | None = None,
-        audience: str | None = None,
         algorithm: str = DEFAULT_JWT_ALGORITHM,
         algorithms: list[str] | None = None,
         auth_method: str = CLIENT_SECRET_AUTH_METHOD_JWT,
@@ -92,21 +92,18 @@ class OidcClient:
 
         Args:
             issuer: The OIDC issuer URL (e.g., "https://auth.example.com").
-            client_id: The OAuth2 client identifier. Optional when only
-                validating access tokens.
+            client_id: The OAuth2 client identifier.  Required, since this
+                class only handles token retrieval.
             client_secret: The client secret for client credentials flow.
-                Either client_secret or private_key must be provided for
-                token retrieval.
+                Either client_secret or private_key must be provided.
             private_key: PEM-encoded private key for JWT-based authentication.
-                Either client_secret or private_key must be provided for
-                token retrieval.
+                Either client_secret or private_key must be provided.
             scopes: List of OAuth2 scopes to request. Defaults to ["openid"].
-            audience: The expected audience claim for token validation.
-                If None, audience validation is skipped.
             algorithm: The JWT signing algorithm for private key auth.
                 Defaults to "RS256".
-            algorithms: List of allowed algorithms for token validation.
-                Defaults to SUPPORTED_ALGORITHMS.
+            algorithms: List of allowed algorithms exposed to the underlying
+                OIDC authentication helper (used for retrieving the token
+                endpoint).  Defaults to SUPPORTED_ALGORITHMS.
             auth_method: The authentication method to use with ``client_secret``.
                 One of ``"client_secret_jwt"`` (default), ``"client_secret_post"``,
                 or ``"client_secret_basic"``.  When ``"client_secret_jwt"`` is
@@ -133,7 +130,6 @@ class OidcClient:
         self.client_secret = client_secret
         self.private_key = private_key
         self.scopes = ["openid"] if scopes is None else scopes
-        self.audience = audience
         self.algorithm = algorithm
         self.algorithms = algorithms or SUPPORTED_ALGORITHMS
         self.auth_method = auth_method
@@ -198,7 +194,7 @@ class OidcClient:
             self._authentication = OidcAuthentication(
                 issuer=self.issuer,
                 scopes=self.scopes,
-                api_audience=self.audience,
+                api_audience=None,
                 service=self.http_service,
                 memory_cache=self.memory_cache,
                 algorithms=self.algorithms,
@@ -214,12 +210,10 @@ class OidcClient:
             The OpenID Connect instance.
 
         Raises:
-            ValueError: If client_id is not provided for token retrieval operations.
-            ValueError: If neither client_secret nor private_key is provided, or if both are provided.
+            ValueError: If neither ``client_secret`` nor ``private_key`` is
+                provided, or if both are provided simultaneously.
         """
         if self._openid_connect is None:
-            if self.client_id is None:
-                raise ValueError("client_id must be provided for token retrieval operations.")
             if self.client_secret is None and self.private_key is None:
                 raise ValueError("Either client_secret or private_key must be provided for token retrieval operations.")
             if self.client_secret is not None and self.private_key is not None:
@@ -292,74 +286,6 @@ class OidcClient:
             >>> fresh_token = await client.get_access_token_async(force_renew_token=True)
         """
         return await self.openid_connect.get_access_token_async(force_renew_token)
-
-    def validate_token(
-        self,
-        token: str,
-        dpop: str | None = None,
-        path: str | None = None,
-        http_method: str | None = None,
-        audience: str | None = None,
-    ) -> AuthenticationResult:
-        """Validate an access token synchronously.
-
-        Validates the token signature, expiration, issuer, and optionally
-        the DPoP proof if provided.
-
-        Args:
-            token: The access token to validate.
-            dpop: The DPoP proof JWT for DPoP-bound tokens, or None.
-            path: The request path for DPoP validation.
-            http_method: The HTTP method for DPoP validation.
-            audience: Override the audience for this validation call.
-                If provided, takes precedence over the audience set at
-                construction time. If None, falls back to the constructor
-                audience (which may also be None to skip audience validation).
-
-        Returns:
-            AuthenticationResult indicating success or failure with details.
-
-        Example:
-            >>> result = client.validate_token(access_token)
-            >>> if result.success:
-            ...     print(f"Valid! Subject: {result.payload['sub']}")
-            ... else:
-            ...     print(f"Invalid: {result.error}")
-        """
-        return self.authentication.validate(token, dpop, path, http_method, audience)
-
-    async def validate_token_async(
-        self,
-        token: str,
-        dpop: str | None = None,
-        path: str | None = None,
-        http_method: str | None = None,
-        audience: str | None = None,
-    ) -> AuthenticationResult:
-        """Validate an access token asynchronously.
-
-        Validates the token signature, expiration, issuer, and optionally
-        the DPoP proof if provided.
-
-        Args:
-            token: The access token to validate.
-            dpop: The DPoP proof JWT for DPoP-bound tokens, or None.
-            path: The request path for DPoP validation.
-            http_method: The HTTP method for DPoP validation.
-            audience: Override the audience for this validation call.
-                If provided, takes precedence over the audience set at
-                construction time. If None, falls back to the constructor
-                audience (which may also be None to skip audience validation).
-
-        Returns:
-            AuthenticationResult indicating success or failure with details.
-
-        Example:
-            >>> result = await client.validate_token_async(access_token)
-            >>> if result.success:
-            ...     print(f"Valid! Subject: {result.payload['sub']}")
-        """
-        return await self.authentication.validate_async(token, dpop, path, http_method, audience)
 
     def token_exchange(
         self,

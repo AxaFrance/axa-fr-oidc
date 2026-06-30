@@ -40,12 +40,16 @@ from axa_fr_oidc.memory_cache import IMemoryCache, MemoryCache
 from axa_fr_oidc.oidc import (
     AuthenticationResult,
     BearerToken,
+    HandleValidationResult,
     IdToken,
     IOidcAuthentication,
     IOpenIdConnect,
     OidcAuthentication,
     OpenIdConnect,
 )
+
+# High-level validator (simplified API)
+from axa_fr_oidc.validator import OidcValidator
 
 __all__ = [
     # Constants
@@ -70,6 +74,8 @@ __all__ = [
     "AuthenticationResult",
     # Token Types
     "BearerToken",
+    # Custom validation hook
+    "HandleValidationResult",
     # Authorization
     "IGenericAuthorization",
     # HTTP Service
@@ -82,8 +88,10 @@ __all__ = [
     "JWTAuthorization",
     "MemoryCache",
     "OidcAuthentication",
-    # High-level client (recommended for most use cases)
+    # High-level client (recommended for token retrieval)
     "OidcClient",
+    # High-level validator (recommended for token validation)
+    "OidcValidator",
     "OpenIdConnect",
     "XHttpServiceGet",
 ]
