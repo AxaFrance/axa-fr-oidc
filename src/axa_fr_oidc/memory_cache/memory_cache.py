@@ -5,6 +5,8 @@ import time
 from abc import ABC
 from typing import Any, ClassVar
 
+from axa_fr_oidc.constants import DEFAULT_MEMORY_CACHE_TTL_MS
+
 
 class AbstractSingleton(abc.ABCMeta):
     """Metaclass that implements the singleton pattern.
@@ -53,13 +55,21 @@ class IMemoryCache(ABC, metaclass=AbstractSingleton):
         ...
 
     @abc.abstractmethod
-    def set(self, key: tuple[str, ...], value: Any, ttl_ms: int | None = None) -> None:
+    def set(
+        self,
+        key: tuple[str, ...],
+        value: Any,
+        ttl_ms: int | None = DEFAULT_MEMORY_CACHE_TTL_MS,
+    ) -> None:
         """Store a value in the cache.
 
         Args:
             key: The cache key as a tuple of strings.
             value: The value to cache.
-            ttl_ms: Time-to-live in milliseconds. If None, the entry never expires.
+            ttl_ms: Time-to-live in milliseconds. Defaults to
+                :data:`~axa_fr_oidc.constants.DEFAULT_MEMORY_CACHE_TTL_MS`
+                (30 minutes). Pass ``None`` explicitly to store an entry
+                that never expires.
         """
         ...
 
@@ -111,13 +121,21 @@ class MemoryCache(IMemoryCache):
             return None
         return self.cache.get(key, None)
 
-    def set(self, key: tuple[str, ...], value: Any, ttl_ms: int | None = None) -> None:
+    def set(
+        self,
+        key: tuple[str, ...],
+        value: Any,
+        ttl_ms: int | None = DEFAULT_MEMORY_CACHE_TTL_MS,
+    ) -> None:
         """Store a value in the cache.
 
         Args:
             key: The cache key as a tuple of strings.
             value: The value to cache.
-            ttl_ms: Time-to-live in milliseconds. If None, the entry never expires.
+            ttl_ms: Time-to-live in milliseconds. Defaults to
+                :data:`~axa_fr_oidc.constants.DEFAULT_MEMORY_CACHE_TTL_MS`
+                (30 minutes). Pass ``None`` explicitly to store an entry
+                that never expires.
         """
         self.cache[key] = value
         if ttl_ms is not None:

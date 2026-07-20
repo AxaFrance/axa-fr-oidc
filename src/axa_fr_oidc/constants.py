@@ -13,6 +13,9 @@ DEFAULT_HTTP_TIMEOUT_SECONDS = 5  # 5 seconds
 # Cache constants (in seconds)
 DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS = 3600  # 1 hour
 
+# Cache constants (in milliseconds)
+DEFAULT_MEMORY_CACHE_TTL_MS = 30 * 60 * 1000  # 30 minutes
+
 # Algorithm constants
 DEFAULT_JWT_ALGORITHM = "RS256"
 DEFAULT_JWT_CLIENTSECRET_ALGORITHM = "HS256"
