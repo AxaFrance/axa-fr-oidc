@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from axa_fr_oidc.constants import DEFAULT_MEMORY_CACHE_TTL_MS
 from axa_fr_oidc.memory_cache.memory_cache import (
     IMemoryCache,
     MemoryCache,
@@ -22,7 +23,7 @@ class TestAbstractSingleton:
     def test_singleton_persists_across_calls(self):
         """Test that singleton instance persists across multiple instantiations."""
         cache1 = MemoryCache()
-        cache1.set(("test_key",), "test_value")
+        cache1.set(("test_key",), "test_value", ttl_ms=None)
 
         cache2 = MemoryCache()
         assert cache2.get(("test_key",)) == "test_value"
@@ -309,24 +310,56 @@ class TestMemoryCache:
         assert key not in cache.cache
         assert key not in cache._expirations
 
-    def test_set_without_ttl_never_expires(self):
-        """Test that a value without TTL never expires."""
+    def test_set_with_explicit_none_ttl_never_expires(self):
+        """Test that a value stored with an explicit None TTL never expires."""
         cache = MemoryCache()
         key = ("no_ttl",)
-        cache.set(key, "persistent")
+        cache.set(key, "persistent", ttl_ms=None)
         assert cache.get(key) == "persistent"
         assert key not in cache._expirations
 
-    def test_set_overwrite_removes_ttl_when_none(self):
-        """Test that overwriting a key without TTL removes previous expiration."""
+    def test_set_overwrite_removes_ttl_when_explicit_none(self):
+        """Test that overwriting a key with explicit None TTL removes previous expiration."""
         cache = MemoryCache()
         key = ("overwrite_ttl",)
 
         cache.set(key, "value1", ttl_ms=60_000)
         assert key in cache._expirations
 
-        cache.set(key, "value2")  # No TTL
+        cache.set(key, "value2", ttl_ms=None)
         assert key not in cache._expirations
+        assert cache.get(key) == "value2"
+
+    def test_default_ttl_is_30_minutes(self):
+        """Test that the default TTL constant is 30 minutes expressed in milliseconds."""
+        assert DEFAULT_MEMORY_CACHE_TTL_MS == 30 * 60 * 1000
+
+    def test_set_without_ttl_uses_default_ttl(self):
+        """Test that omitting ttl_ms applies the 30-minute default TTL."""
+        cache = MemoryCache()
+        key = ("default_ttl",)
+
+        before_ms = time.time() * 1000
+        cache.set(key, "value")
+        after_ms = time.time() * 1000
+
+        assert key in cache._expirations
+        expiration = cache._expirations[key]
+        # Expiration must land within the [before, after] + 30-minute window.
+        assert before_ms + DEFAULT_MEMORY_CACHE_TTL_MS <= expiration
+        assert expiration <= after_ms + DEFAULT_MEMORY_CACHE_TTL_MS
+        assert cache.get(key) == "value"
+
+    def test_set_overwrite_applies_default_ttl(self):
+        """Test that overwriting without an explicit TTL applies the default TTL."""
+        cache = MemoryCache()
+        key = ("overwrite_default_ttl",)
+
+        cache.set(key, "value1", ttl_ms=None)
+        assert key not in cache._expirations
+
+        cache.set(key, "value2")
+        assert key in cache._expirations
         assert cache.get(key) == "value2"
 
     def test_delete_removes_expiration(self):
