@@ -13,7 +13,7 @@ from axa_fr_oidc.oidc.openid_connect import (
     _get_private_key_access_token,
 )
 
-from .conftest import FakeAuthentication, FakeBadAuthentication
+from .conftest import ExpiringFakeAuthentication, FakeAuthentication, FakeBadAuthentication
 
 
 @pytest.mark.asyncio
@@ -194,6 +194,18 @@ def test_oidc_instance_id_is_unique():
     assert oidc1._instance_id != oidc2._instance_id
 
 
+def test_oidc_rejects_negative_token_expiration_margin():
+    """Test that a negative token expiration margin is rejected."""
+    with pytest.raises(ValueError, match="token_expiration_margin_seconds"):
+        OpenIdConnect(
+            FakeAuthentication(),
+            MemoryCache(),
+            "client-id",
+            "secret",
+            token_expiration_margin_seconds=-1,
+        )
+
+
 def test_oidc_cache_isolation_between_instances(mocker):
     """Test that two instances with the same client_id do not share token cache."""
     call_count = 0
@@ -300,6 +312,124 @@ def test_oidc_force_renew_token_default_false(mocker):
     # Default behavior uses cache
     token2 = oidc.get_access_token()
     assert token2 == "cached-token"
+
+
+def test_oidc_sets_cache_ttl_from_token_expiration(mocker):
+    """Test that the cache expires the token 90 seconds before its exp claim."""
+    now = 1_000.0
+    mocker.patch("axa_fr_oidc.oidc.openid_connect.time.time", return_value=now)
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        return_value="token-1",
+    )
+    cache = MemoryCache()
+    oidc = OpenIdConnect(
+        ExpiringFakeAuthentication({"token-1": now + 300}),
+        cache,
+        "client-id",
+        "secret",
+    )
+
+    assert oidc.get_access_token() == "token-1"
+
+    cache_key = ("oidc", oidc.client_id, oidc._instance_id)
+    assert cache._expirations[cache_key] == (now + 210) * 1000
+
+
+def test_oidc_renews_cached_token_inside_expiration_margin(mocker):
+    """Test that a cached token is renewed at the early-expiration boundary."""
+    now = 1_000.0
+    fetch_token = mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        return_value="fresh-token",
+    )
+    mocker.patch("axa_fr_oidc.oidc.openid_connect.time.time", return_value=now)
+    cache = MemoryCache()
+    oidc = OpenIdConnect(
+        ExpiringFakeAuthentication(
+            {
+                "cached-token": now + 90,
+                "fresh-token": now + 300,
+            }
+        ),
+        cache,
+        "client-id",
+        "secret",
+    )
+    cache_key = ("oidc", oidc.client_id, oidc._instance_id)
+    cache.set(cache_key, "cached-token", ttl_ms=None)
+
+    assert oidc.get_access_token() == "fresh-token"
+    assert cache.get(cache_key) == "fresh-token"
+    fetch_token.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_oidc_renews_cached_token_inside_expiration_margin_async(mocker):
+    """Test early renewal through the async access-token API."""
+    now = 1_000.0
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        return_value="fresh-token",
+    )
+    mocker.patch("axa_fr_oidc.oidc.openid_connect.time.time", return_value=now)
+    cache = MemoryCache()
+    oidc = OpenIdConnect(
+        ExpiringFakeAuthentication(
+            {
+                "cached-token": now + 30,
+                "fresh-token": now + 300,
+            }
+        ),
+        cache,
+        "client-id",
+        "secret",
+        token_expiration_margin_seconds=30,
+    )
+    cache_key = ("oidc", oidc.client_id, oidc._instance_id)
+    cache.set(cache_key, "cached-token", ttl_ms=None)
+
+    assert await oidc.get_access_token_async() == "fresh-token"
+
+
+def test_oidc_zero_expiration_margin_keeps_unexpired_cached_token(mocker):
+    """Test that a zero margin disables early expiration."""
+    now = 1_000.0
+    fetch_token = mocker.patch("axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token")
+    mocker.patch("axa_fr_oidc.oidc.openid_connect.time.time", return_value=now)
+    cache = MemoryCache()
+    oidc = OpenIdConnect(
+        ExpiringFakeAuthentication({"cached-token": now + 1}),
+        cache,
+        "client-id",
+        "secret",
+        token_expiration_margin_seconds=0,
+    )
+    cache_key = ("oidc", oidc.client_id, oidc._instance_id)
+    cache.set(cache_key, "cached-token", ttl_ms=None)
+
+    assert oidc.get_access_token() == "cached-token"
+    fetch_token.assert_not_called()
+
+
+def test_oidc_does_not_return_new_token_inside_expiration_margin(mocker):
+    """Test that a newly fetched token inside the margin is unusable."""
+    now = 1_000.0
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        return_value="short-lived-token",
+    )
+    mocker.patch("axa_fr_oidc.oidc.openid_connect.time.time", return_value=now)
+    cache = MemoryCache()
+    oidc = OpenIdConnect(
+        ExpiringFakeAuthentication({"short-lived-token": now + 90}),
+        cache,
+        "client-id",
+        "secret",
+    )
+
+    assert oidc.get_access_token() is None
+    assert cache.get(("oidc", oidc.client_id, oidc._instance_id)) is None
 
 
 def test_oidc_get_token_returns_none_on_validation_failure(mocker):

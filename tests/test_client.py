@@ -4,7 +4,12 @@ import pytest
 from requests_oauth2client import BearerToken
 
 from axa_fr_oidc.client import OidcClient
-from axa_fr_oidc.constants import DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS, DEFAULT_JWT_ALGORITHM, SUPPORTED_ALGORITHMS
+from axa_fr_oidc.constants import (
+    DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
+    DEFAULT_JWT_ALGORITHM,
+    DEFAULT_TOKEN_EXPIRATION_MARGIN_SECONDS,
+    SUPPORTED_ALGORITHMS,
+)
 from axa_fr_oidc.http_service import IHttpServiceGet
 from axa_fr_oidc.memory_cache import IMemoryCache, MemoryCache
 
@@ -47,6 +52,7 @@ class TestOidcClientInitialization:
         assert client.scopes == ["openid"]
         assert client.algorithm == DEFAULT_JWT_ALGORITHM
         assert client.algorithms == SUPPORTED_ALGORITHMS
+        assert client.token_expiration_margin_seconds == DEFAULT_TOKEN_EXPIRATION_MARGIN_SECONDS
 
     def test_init_with_private_key(self, fake_private_key_pem):
         """Test initialization with private key."""
@@ -164,6 +170,27 @@ class TestOidcClientInitialization:
 
         assert client.issuer_cache_expiration_seconds == 7200
 
+    def test_init_custom_token_expiration_margin(self):
+        """Test initialization with a custom token expiration margin."""
+        client = OidcClient(
+            issuer="https://test.issuer.com",
+            client_id="test-client-id",
+            client_secret="test-secret",
+            token_expiration_margin_seconds=0,
+        )
+
+        assert client.token_expiration_margin_seconds == 0
+
+    def test_init_rejects_negative_token_expiration_margin(self):
+        """Test that token expiration margin cannot be negative."""
+        with pytest.raises(ValueError, match="token_expiration_margin_seconds"):
+            OidcClient(
+                issuer="https://test.issuer.com",
+                client_id="test-client-id",
+                client_secret="test-secret",
+                token_expiration_margin_seconds=-1,
+            )
+
 
 class TestOidcClientProperties:
     """Tests for OidcClient lazy-loaded properties."""
@@ -248,6 +275,7 @@ class TestOidcClientProperties:
             client_id="test-client-id",
             client_secret="test-secret",
             http_service=FakeHttpService(),
+            token_expiration_margin_seconds=45,
         )
 
         # Initially no OpenID Connect
@@ -258,6 +286,7 @@ class TestOidcClientProperties:
 
         assert oidc is not None
         assert client._openid_connect is oidc
+        assert oidc.token_expiration_margin_seconds == 45
 
         # Second access returns same instance
         assert client.openid_connect is oidc

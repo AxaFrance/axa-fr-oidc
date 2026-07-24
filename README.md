@@ -486,8 +486,14 @@ client = OidcClient(
     client_secret="your-client-secret",
     scopes=["openid", "profile"],
     issuer_cache_expiration_seconds=7200,  # Cache token_endpoint for 2 hours (default: 3600)
+    token_expiration_margin_seconds=90,  # Renew cached access tokens 90 seconds before exp
 )
 ```
+
+`token_expiration_margin_seconds` controls only access tokens retrieved and
+cached by `OidcClient`. It defaults to 90 seconds and can be set to `0` to keep
+tokens until their actual `exp` claim. It does not change how `OidcValidator`
+validates incoming tokens.
 
 #### Using OidcValidator
 

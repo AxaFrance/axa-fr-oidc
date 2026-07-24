@@ -101,6 +101,22 @@ class FakeBadAuthentication(IOidcAuthentication):
         return ["test"]
 
 
+class ExpiringFakeAuthentication(FakeAuthentication):
+    def __init__(self, expirations: dict[str, float]) -> None:
+        super().__init__()
+        self.expirations = expirations
+
+    def validate(
+        self,
+        token: str,
+        dpop: str | None,
+        path: str | None = None,
+        http_method: str | None = None,
+        audience: str | None = None,
+    ) -> AuthenticationResult:
+        return AuthenticationResult(success=True, payload={"exp": self.expirations[token]})
+
+
 @pytest.fixture(scope="function", autouse=True)
 def clear_cache():
     MemoryCache().clear()

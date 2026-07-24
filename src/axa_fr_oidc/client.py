@@ -15,6 +15,7 @@ from axa_fr_oidc.constants import (
     CLIENT_SECRET_AUTH_METHOD_JWT,
     DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
     DEFAULT_JWT_ALGORITHM,
+    DEFAULT_TOKEN_EXPIRATION_MARGIN_SECONDS,
     SUPPORTED_ALGORITHMS,
 )
 from axa_fr_oidc.http_service import IHttpServiceGet, XHttpServiceGet
@@ -87,6 +88,7 @@ class OidcClient:
         verify: bool = True,
         timeout: float | None = None,
         issuer_cache_expiration_seconds: int = DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
+        token_expiration_margin_seconds: int = DEFAULT_TOKEN_EXPIRATION_MARGIN_SECONDS,
     ) -> None:
         """Initialize the OIDC client.
 
@@ -124,7 +126,17 @@ class OidcClient:
             issuer_cache_expiration_seconds: Time-to-live in seconds for the
                 JWKS and token_endpoint cache. Defaults to
                 DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS (3600 = 1 hour).
+            token_expiration_margin_seconds: Number of seconds before the JWT
+                ``exp`` claim when a cached access token is considered expired.
+                Defaults to DEFAULT_TOKEN_EXPIRATION_MARGIN_SECONDS (90 seconds).
+                Set to 0 to disable early expiration.
+
+        Raises:
+            ValueError: If token_expiration_margin_seconds is negative.
         """
+        if token_expiration_margin_seconds < 0:
+            raise ValueError("token_expiration_margin_seconds must be greater than or equal to 0.")
+
         self.issuer = issuer
         self.client_id = client_id
         self.client_secret = client_secret
@@ -137,6 +149,7 @@ class OidcClient:
         self.verify = verify
         self.timeout = timeout
         self.issuer_cache_expiration_seconds = issuer_cache_expiration_seconds
+        self.token_expiration_margin_seconds = token_expiration_margin_seconds
 
         # Lazy initialization for HTTP clients
         self._http_client: Client | None = None
@@ -226,6 +239,7 @@ class OidcClient:
                 private_key=self.private_key,
                 algorithm=self.algorithm,
                 auth_method=self.auth_method,
+                token_expiration_margin_seconds=self.token_expiration_margin_seconds,
             )
         return self._openid_connect
 

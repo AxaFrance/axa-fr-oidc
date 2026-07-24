@@ -1,6 +1,7 @@
 """OpenID Connect client for obtaining and exchanging access tokens."""
 
 import abc
+import math
 import time
 import uuid
 from typing import Any
@@ -19,10 +20,11 @@ from axa_fr_oidc.constants import (
     DEFAULT_JWT_ALGORITHM,
     DEFAULT_JWT_CLIENTSECRET_ALGORITHM,
     DEFAULT_JWT_EXPIRATION_SECONDS,
+    DEFAULT_TOKEN_EXPIRATION_MARGIN_SECONDS,
     GRANT_TYPE_CLIENT_CREDENTIALS,
 )
 from axa_fr_oidc.memory_cache.memory_cache import IMemoryCache
-from axa_fr_oidc.oidc.oidc_authentication import IOidcAuthentication
+from axa_fr_oidc.oidc.oidc_authentication import AuthenticationResult, IOidcAuthentication
 
 
 def _get_private_key_access_token(
@@ -312,6 +314,7 @@ class OpenIdConnect(IOpenIdConnect):
         private_key: str | None = None,
         algorithm: str = DEFAULT_JWT_ALGORITHM,
         auth_method: str = CLIENT_SECRET_AUTH_METHOD_JWT,
+        token_expiration_margin_seconds: int = DEFAULT_TOKEN_EXPIRATION_MARGIN_SECONDS,
     ) -> None:
         """Initialize the OpenID Connect client.
 
@@ -326,20 +329,27 @@ class OpenIdConnect(IOpenIdConnect):
             auth_method: The authentication method to use with ``client_secret``.
                 One of ``"client_secret_jwt"`` (default), ``"client_secret_post"``,
                 or ``"client_secret_basic"``.
+            token_expiration_margin_seconds: Number of seconds before the JWT
+                ``exp`` claim when a cached access token is considered expired.
+                Defaults to 90 seconds. Set to 0 to disable early expiration.
 
         Raises:
-            ValueError: If neither client_secret nor private_key is provided, or if both are provided
+            ValueError: If credential configuration is invalid or
+                token_expiration_margin_seconds is negative.
         """
         if client_secret is None and private_key is None:
             raise ValueError("Either client_secret or private_key must be provided for token retrieval operations.")
         if client_secret is not None and private_key is not None:
             raise ValueError("Both client_secret and private_key cannot be provided at the same time.")
+        if token_expiration_margin_seconds < 0:
+            raise ValueError("token_expiration_margin_seconds must be greater than or equal to 0.")
 
         self.client_id = client_id
         self.client_secret = client_secret
         self.private_key = private_key
         self.algorithm = algorithm
         self.auth_method = auth_method
+        self.token_expiration_margin_seconds = token_expiration_margin_seconds
 
         self.authentication = authentication
         self.memory_cache = memory_cache
@@ -361,6 +371,25 @@ class OpenIdConnect(IOpenIdConnect):
             )
         return self._oauth2client
 
+    def _get_token_cache_ttl_ms(self, validation_result: AuthenticationResult) -> int | None:
+        """Calculate cache lifetime from a validated token's expiration.
+
+        Args:
+            validation_result: Successful token validation result.
+
+        Returns:
+            The remaining cache lifetime in milliseconds, zero when the token
+            is inside the early-expiration window, or None when no usable
+            numeric ``exp`` claim is available.
+        """
+        payload = validation_result.payload
+        expiration = payload.get("exp") if payload is not None else None
+        if not isinstance(expiration, (int, float)) or isinstance(expiration, bool) or not math.isfinite(expiration):
+            return None
+
+        remaining_seconds = expiration - time.time() - self.token_expiration_margin_seconds
+        return max(int(remaining_seconds * 1000), 0)
+
     def _get_token(self, token_endpoint: str, force_renew_token: bool = False) -> str | None:
         """Get a valid access token, using cache if available.
 
@@ -380,7 +409,10 @@ class OpenIdConnect(IOpenIdConnect):
                 validation_result = self.authentication.validate(str(access_token_cached), None)
 
                 if validation_result.success:
-                    return str(access_token_cached)
+                    ttl_ms = self._get_token_cache_ttl_ms(validation_result)
+                    if ttl_ms is None or ttl_ms > 0:
+                        return str(access_token_cached)
+                self.memory_cache.delete(cache_key)
 
         access_token: str
         if self.private_key is not None:
@@ -405,7 +437,13 @@ class OpenIdConnect(IOpenIdConnect):
         validation_result = self.authentication.validate(access_token, None)
 
         if validation_result.success:
-            self.memory_cache.set(cache_key, access_token)
+            ttl_ms = self._get_token_cache_ttl_ms(validation_result)
+            if ttl_ms == 0:
+                return None
+            if ttl_ms is None:
+                self.memory_cache.set(cache_key, access_token)
+            else:
+                self.memory_cache.set(cache_key, access_token, ttl_ms=ttl_ms)
 
             return access_token
 
