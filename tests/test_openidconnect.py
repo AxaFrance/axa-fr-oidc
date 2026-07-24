@@ -186,12 +186,56 @@ def test_oidc_get_access_token_without_private_key(monkeypatch):
     assert token == "FAKE_ACCESS_TOKEN"
 
 
-def test_oidc_instance_id_is_unique():
-    """Test that each OpenIdConnect instance gets a unique instance ID."""
-    oidc1 = OpenIdConnect(FakeAuthentication(), MemoryCache(), "same-client-id", "secret")
-    oidc2 = OpenIdConnect(FakeAuthentication(), MemoryCache(), "same-client-id", "secret")
+def test_oidc_cache_key_is_deterministic():
+    """Test that two instances with same parameters share the same cache key."""
+    auth = FakeAuthentication()
+    oidc1 = OpenIdConnect(auth, MemoryCache(), "same-client-id", "secret")
+    oidc2 = OpenIdConnect(auth, MemoryCache(), "same-client-id", "secret")
 
-    assert oidc1._instance_id != oidc2._instance_id
+    assert oidc1._get_cache_key("https://test/token") == oidc2._get_cache_key("https://test/token")
+
+
+def test_oidc_cache_key_differs_by_client_id():
+    """Test that different client IDs produce different cache keys."""
+    auth = FakeAuthentication()
+    oidc1 = OpenIdConnect(auth, MemoryCache(), "client-a", "secret")
+    oidc2 = OpenIdConnect(auth, MemoryCache(), "client-b", "secret")
+
+    assert oidc1._get_cache_key("https://test/token") != oidc2._get_cache_key("https://test/token")
+
+
+def test_oidc_cache_key_differs_by_token_endpoint():
+    """Test that different token endpoints produce different cache keys."""
+    oidc = OpenIdConnect(FakeAuthentication(), MemoryCache(), "client-id", "secret")
+
+    assert oidc._get_cache_key("https://issuer-a/token") != oidc._get_cache_key("https://issuer-b/token")
+
+
+def test_oidc_cache_key_normalizes_scopes():
+    """Test that scope order and duplicates do not affect the cache key."""
+
+    class ScopedFakeAuthentication(FakeAuthentication):
+        def __init__(self, scopes: list[str]) -> None:
+            super().__init__()
+            self._scopes = scopes
+
+        def get_scopes(self) -> list[str]:
+            return self._scopes
+
+    oidc1 = OpenIdConnect(
+        ScopedFakeAuthentication(["scope-b", "scope-a", "scope-a"]),
+        MemoryCache(),
+        "client-id",
+        "secret",
+    )
+    oidc2 = OpenIdConnect(
+        ScopedFakeAuthentication(["scope-a", "scope-b"]),
+        MemoryCache(),
+        "client-id",
+        "secret",
+    )
+
+    assert oidc1._get_cache_key("https://test/token") == oidc2._get_cache_key("https://test/token")
 
 
 def test_oidc_rejects_negative_token_expiration_margin():
@@ -206,8 +250,8 @@ def test_oidc_rejects_negative_token_expiration_margin():
         )
 
 
-def test_oidc_cache_isolation_between_instances(mocker):
-    """Test that two instances with the same client_id do not share token cache."""
+def test_oidc_cache_shared_between_identical_instances(mocker):
+    """Test that two instances with the same parameters share a common cache entry."""
     call_count = 0
 
     def fake_get_token(token_endpoint, client_id, client_secret, scopes, auth_method="client_secret_jwt"):
@@ -220,14 +264,54 @@ def test_oidc_cache_isolation_between_instances(mocker):
         side_effect=fake_get_token,
     )
 
+    auth = FakeAuthentication()
+    shared_cache = MemoryCache()
     client_id = "shared-client-id"
-    oidc1 = OpenIdConnect(FakeAuthentication(), MemoryCache(), client_id, "secret")
-    oidc2 = OpenIdConnect(FakeAuthentication(), MemoryCache(), client_id, "secret")
+    oidc1 = OpenIdConnect(auth, shared_cache, client_id, "secret")
+    oidc2 = OpenIdConnect(auth, shared_cache, client_id, "secret")
 
     token1 = oidc1.get_access_token()
     token2 = oidc2.get_access_token()
 
-    # Each instance should have fetched its own token
+    # Both instances share the same cache key → only one fetch, same token
+    assert token1 == token2
+    assert call_count == 1
+
+
+def test_oidc_cache_isolated_by_different_scopes(mocker):
+    """Test that instances with different scopes have different cache keys and don't interfere."""
+
+    class ScopedFakeAuthentication(FakeAuthentication):
+        def __init__(self, scopes: list[str]) -> None:
+            super().__init__()
+            self._scopes = scopes
+
+        def get_scopes(self) -> list[str]:
+            return self._scopes
+
+    call_count = 0
+
+    def fake_get_token(token_endpoint, client_id, client_secret, scopes, auth_method="client_secret_jwt"):
+        nonlocal call_count
+        call_count += 1
+        return f"token-{call_count}"
+
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        side_effect=fake_get_token,
+    )
+
+    cache = MemoryCache()
+    cache.clear()
+    oidc1 = OpenIdConnect(ScopedFakeAuthentication(["scope-a"]), cache, "client-id", "secret")
+    oidc2 = OpenIdConnect(ScopedFakeAuthentication(["scope-b"]), cache, "client-id", "secret")
+
+    assert oidc1._get_cache_key("https://test/token") != oidc2._get_cache_key("https://test/token")
+
+    token1 = oidc1.get_access_token()
+    token2 = oidc2.get_access_token()
+
+    # Different scopes → different cache keys → separate fetches
     assert token1 != token2
     assert call_count == 2
 
@@ -332,7 +416,7 @@ def test_oidc_sets_cache_ttl_from_token_expiration(mocker):
 
     assert oidc.get_access_token() == "token-1"
 
-    cache_key = ("oidc", oidc.client_id, oidc._instance_id)
+    cache_key = oidc._get_cache_key("https://test/token")
     assert cache._expirations[cache_key] == (now + 210) * 1000
 
 
@@ -356,7 +440,7 @@ def test_oidc_renews_cached_token_inside_expiration_margin(mocker):
         "client-id",
         "secret",
     )
-    cache_key = ("oidc", oidc.client_id, oidc._instance_id)
+    cache_key = oidc._get_cache_key("https://test/token")
     cache.set(cache_key, "cached-token", ttl_ms=None)
 
     assert oidc.get_access_token() == "fresh-token"
@@ -386,7 +470,7 @@ async def test_oidc_renews_cached_token_inside_expiration_margin_async(mocker):
         "secret",
         token_expiration_margin_seconds=30,
     )
-    cache_key = ("oidc", oidc.client_id, oidc._instance_id)
+    cache_key = oidc._get_cache_key("https://test/token")
     cache.set(cache_key, "cached-token", ttl_ms=None)
 
     assert await oidc.get_access_token_async() == "fresh-token"
@@ -405,7 +489,7 @@ def test_oidc_zero_expiration_margin_keeps_unexpired_cached_token(mocker):
         "secret",
         token_expiration_margin_seconds=0,
     )
-    cache_key = ("oidc", oidc.client_id, oidc._instance_id)
+    cache_key = oidc._get_cache_key("https://test/token")
     cache.set(cache_key, "cached-token", ttl_ms=None)
 
     assert oidc.get_access_token() == "cached-token"
@@ -429,7 +513,7 @@ def test_oidc_does_not_return_new_token_inside_expiration_margin(mocker):
     )
 
     assert oidc.get_access_token() is None
-    assert cache.get(("oidc", oidc.client_id, oidc._instance_id)) is None
+    assert cache.get(oidc._get_cache_key("https://test/token")) is None
 
 
 def test_oidc_get_token_returns_none_on_validation_failure(mocker):

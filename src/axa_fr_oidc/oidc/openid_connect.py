@@ -353,7 +353,6 @@ class OpenIdConnect(IOpenIdConnect):
 
         self.authentication = authentication
         self.memory_cache = memory_cache
-        self._instance_id = str(uuid.uuid4())
         self._oauth2client: OAuth2Client | None = None
 
     def _get_oauth2_client(self) -> OAuth2Client:
@@ -370,6 +369,12 @@ class OpenIdConnect(IOpenIdConnect):
                 auth=(self.client_id, self.client_secret) if self.client_secret else self.client_id,
             )
         return self._oauth2client
+
+    def _get_cache_key(self, token_endpoint: str) -> tuple[str, ...]:
+        """Build a deterministic key for the token request and validation context."""
+        audience = self.authentication.api_audience or ""
+        scopes = sorted(set(self.authentication.get_scopes()))
+        return ("oidc-v2", token_endpoint, self.client_id, audience, *scopes)
 
     def _get_token_cache_ttl_ms(self, validation_result: AuthenticationResult) -> int | None:
         """Calculate cache lifetime from a validated token's expiration.
@@ -400,7 +405,7 @@ class OpenIdConnect(IOpenIdConnect):
         Returns:
             The access token string, or None if token acquisition or validation fails.
         """
-        cache_key = ("oidc", self.client_id, self._instance_id)
+        cache_key = self._get_cache_key(token_endpoint)
 
         if not force_renew_token:
             access_token_cached: Any = self.memory_cache.get(cache_key)
