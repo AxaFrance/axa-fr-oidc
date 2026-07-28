@@ -30,6 +30,11 @@ client_secret_jwt  ──(401)──►  client_secret_post  ──(success)─�
                                                     ──(401)──►  HTTPError raised
 ```
 
+After a successful fallback, the access token is cached normally. The same
+`OidcClient`/`OpenIdConnect` instance also remembers that `client_secret_post`
+succeeded, so later token renewals skip the failing JWT attempt and avoid
+repeating the initial 401.
+
 If you already know which method your server supports, set it explicitly to avoid
 the extra round-trip.
 
@@ -107,7 +112,9 @@ token = client.get_access_token()
 
 > **Note:** Even when `CLIENT_SECRET_AUTH_METHOD_JWT` is set explicitly, the
 > automatic fallback to `client_secret_post` on a 401 is still active. The fallback
-> only triggers on a 401 — any other HTTP error is raised immediately.
+> only triggers on a 401 — any other HTTP error is raised immediately. After a
+> successful fallback, that same client instance reuses `client_secret_post` for
+> later token renewals.
 
 ## Low-Level API
 

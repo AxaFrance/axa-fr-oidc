@@ -5,9 +5,11 @@ import pytest
 import requests
 from requests_oauth2client import BearerToken
 
+from axa_fr_oidc.constants import CLIENT_SECRET_AUTH_METHOD_JWT, CLIENT_SECRET_AUTH_METHOD_POST
 from axa_fr_oidc.memory_cache.memory_cache import MemoryCache
 from axa_fr_oidc.oidc.openid_connect import (
     OpenIdConnect,
+    _ClientSecretAccessTokenResult,
     _get_access_token,
     _get_client_secret_access_token,
     _get_private_key_access_token,
@@ -16,9 +18,56 @@ from axa_fr_oidc.oidc.openid_connect import (
 from .conftest import ExpiringFakeAuthentication, FakeAuthentication, FakeBadAuthentication
 
 
+def _client_secret_token_result(
+    access_token: str,
+    auth_method: str = CLIENT_SECRET_AUTH_METHOD_JWT,
+) -> _ClientSecretAccessTokenResult:
+    return _ClientSecretAccessTokenResult(access_token, auth_method)
+
+
+class _TokenEndpointResponse:
+    def __init__(self, status_code: int, payload: dict[str, str]) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"Token endpoint returned {self.status_code}")
+
+    def json(self):
+        return self._payload
+
+
+def _mock_jwt_fallback_to_post(monkeypatch, post_status_code: int = 200) -> list[str]:
+    calls: list[str] = []
+    token_count = 0
+
+    def fake_post(url, data, headers, timeout=None, auth=None):
+        nonlocal token_count
+
+        if "client_assertion" in data:
+            calls.append(CLIENT_SECRET_AUTH_METHOD_JWT)
+            return _TokenEndpointResponse(401, {"error": "invalid_client"})
+
+        if data.get("client_secret") == "client-secret":
+            calls.append(CLIENT_SECRET_AUTH_METHOD_POST)
+            if post_status_code >= 400:
+                return _TokenEndpointResponse(post_status_code, {"error": "invalid_client"})
+            token_count += 1
+            return _TokenEndpointResponse(200, {"access_token": f"post-token-{token_count}"})
+
+        raise AssertionError(f"Unexpected token request data={data!r}, auth={auth!r}")
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    return calls
+
+
 @pytest.mark.asyncio
 async def test_oidc_success(mocker):
-    mocker.patch("axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token", return_value="test")
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
+        return_value=_client_secret_token_result("test"),
+    )
 
     oidc = OpenIdConnect(FakeAuthentication(), MemoryCache(), str(uuid.uuid4()), "test")
 
@@ -107,7 +156,10 @@ def test_oidc_private_key_token_failure(monkeypatch, fake_private_key_pem):
 def test_oidc_token_exchange(mocker):
     """Test token exchange functionality."""
 
-    mocker.patch("axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token", return_value="test")
+    mocker.patch(
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
+        return_value=_client_secret_token_result("test"),
+    )
 
     oidc = OpenIdConnect(FakeAuthentication(), MemoryCache(), str(uuid.uuid4()), "test")
 
@@ -186,6 +238,80 @@ def test_oidc_get_access_token_without_private_key(monkeypatch):
     assert token == "FAKE_ACCESS_TOKEN"
 
 
+def test_oidc_caches_token_and_reuses_successful_fallback_auth_method(monkeypatch):
+    """Test that a successful 401 fallback is cached as the effective auth method."""
+    calls = _mock_jwt_fallback_to_post(monkeypatch)
+
+    oidc = OpenIdConnect(
+        authentication=FakeAuthentication(),
+        memory_cache=MemoryCache(),
+        client_id="client-id",
+        client_secret="client-secret",
+    )
+
+    assert oidc.get_access_token() == "post-token-1"
+    assert calls == [CLIENT_SECRET_AUTH_METHOD_JWT, CLIENT_SECRET_AUTH_METHOD_POST]
+    assert oidc.auth_method == CLIENT_SECRET_AUTH_METHOD_POST
+
+    assert oidc.get_access_token() == "post-token-1"
+    assert calls == [CLIENT_SECRET_AUTH_METHOD_JWT, CLIENT_SECRET_AUTH_METHOD_POST]
+
+    assert oidc.get_access_token(force_renew_token=True) == "post-token-2"
+    assert calls == [
+        CLIENT_SECRET_AUTH_METHOD_JWT,
+        CLIENT_SECRET_AUTH_METHOD_POST,
+        CLIENT_SECRET_AUTH_METHOD_POST,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_oidc_async_reuses_successful_fallback_auth_method(monkeypatch):
+    """Test that the async API reuses the successful fallback auth method."""
+    calls = _mock_jwt_fallback_to_post(monkeypatch)
+
+    oidc = OpenIdConnect(
+        authentication=FakeAuthentication(),
+        memory_cache=MemoryCache(),
+        client_id="client-id",
+        client_secret="client-secret",
+    )
+
+    assert await oidc.get_access_token_async() == "post-token-1"
+    assert await oidc.get_access_token_async(force_renew_token=True) == "post-token-2"
+    assert calls == [
+        CLIENT_SECRET_AUTH_METHOD_JWT,
+        CLIENT_SECRET_AUTH_METHOD_POST,
+        CLIENT_SECRET_AUTH_METHOD_POST,
+    ]
+
+
+def test_oidc_keeps_jwt_auth_method_when_fallback_fails(monkeypatch):
+    """Test that a failed fallback does not change the configured auth method."""
+    calls = _mock_jwt_fallback_to_post(monkeypatch, post_status_code=401)
+
+    oidc = OpenIdConnect(
+        authentication=FakeAuthentication(),
+        memory_cache=MemoryCache(),
+        client_id="client-id",
+        client_secret="client-secret",
+    )
+
+    with pytest.raises(requests.HTTPError):
+        oidc.get_access_token()
+
+    assert oidc.auth_method == CLIENT_SECRET_AUTH_METHOD_JWT
+
+    with pytest.raises(requests.HTTPError):
+        oidc.get_access_token()
+
+    assert calls == [
+        CLIENT_SECRET_AUTH_METHOD_JWT,
+        CLIENT_SECRET_AUTH_METHOD_POST,
+        CLIENT_SECRET_AUTH_METHOD_JWT,
+        CLIENT_SECRET_AUTH_METHOD_POST,
+    ]
+
+
 def test_oidc_cache_key_is_deterministic():
     """Test that two instances with same parameters share the same cache key."""
     auth = FakeAuthentication()
@@ -257,10 +383,10 @@ def test_oidc_cache_shared_between_identical_instances(mocker):
     def fake_get_token(token_endpoint, client_id, client_secret, scopes, auth_method="client_secret_jwt"):
         nonlocal call_count
         call_count += 1
-        return f"token-{call_count}"
+        return _client_secret_token_result(f"token-{call_count}", auth_method)
 
     mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
         side_effect=fake_get_token,
     )
 
@@ -294,10 +420,10 @@ def test_oidc_cache_isolated_by_different_scopes(mocker):
     def fake_get_token(token_endpoint, client_id, client_secret, scopes, auth_method="client_secret_jwt"):
         nonlocal call_count
         call_count += 1
-        return f"token-{call_count}"
+        return _client_secret_token_result(f"token-{call_count}", auth_method)
 
     mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
         side_effect=fake_get_token,
     )
 
@@ -323,10 +449,10 @@ def test_oidc_force_renew_token(mocker):
     def fake_get_token(token_endpoint, client_id, client_secret, scopes, auth_method="client_secret_jwt"):
         nonlocal call_count
         call_count += 1
-        return f"token-{call_count}"
+        return _client_secret_token_result(f"token-{call_count}", auth_method)
 
     mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
         side_effect=fake_get_token,
     )
 
@@ -356,10 +482,10 @@ async def test_oidc_force_renew_token_async(mocker):
     def fake_get_token(token_endpoint, client_id, client_secret, scopes, auth_method="client_secret_jwt"):
         nonlocal call_count
         call_count += 1
-        return f"token-{call_count}"
+        return _client_secret_token_result(f"token-{call_count}", auth_method)
 
     mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
         side_effect=fake_get_token,
     )
 
@@ -383,8 +509,8 @@ async def test_oidc_force_renew_token_async(mocker):
 def test_oidc_force_renew_token_default_false(mocker):
     """Test that force_renew_token defaults to False (uses cache)."""
     mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
-        return_value="cached-token",
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
+        return_value=_client_secret_token_result("cached-token"),
     )
 
     oidc = OpenIdConnect(FakeAuthentication(), MemoryCache(), str(uuid.uuid4()), "secret")
@@ -403,8 +529,8 @@ def test_oidc_sets_cache_ttl_from_token_expiration(mocker):
     now = 1_000.0
     mocker.patch("axa_fr_oidc.oidc.openid_connect.time.time", return_value=now)
     mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
-        return_value="token-1",
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
+        return_value=_client_secret_token_result("token-1"),
     )
     cache = MemoryCache()
     oidc = OpenIdConnect(
@@ -424,8 +550,8 @@ def test_oidc_renews_cached_token_inside_expiration_margin(mocker):
     """Test that a cached token is renewed at the early-expiration boundary."""
     now = 1_000.0
     fetch_token = mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
-        return_value="fresh-token",
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
+        return_value=_client_secret_token_result("fresh-token"),
     )
     mocker.patch("axa_fr_oidc.oidc.openid_connect.time.time", return_value=now)
     cache = MemoryCache()
@@ -453,8 +579,8 @@ async def test_oidc_renews_cached_token_inside_expiration_margin_async(mocker):
     """Test early renewal through the async access-token API."""
     now = 1_000.0
     mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
-        return_value="fresh-token",
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
+        return_value=_client_secret_token_result("fresh-token"),
     )
     mocker.patch("axa_fr_oidc.oidc.openid_connect.time.time", return_value=now)
     cache = MemoryCache()
@@ -479,7 +605,7 @@ async def test_oidc_renews_cached_token_inside_expiration_margin_async(mocker):
 def test_oidc_zero_expiration_margin_keeps_unexpired_cached_token(mocker):
     """Test that a zero margin disables early expiration."""
     now = 1_000.0
-    fetch_token = mocker.patch("axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token")
+    fetch_token = mocker.patch("axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result")
     mocker.patch("axa_fr_oidc.oidc.openid_connect.time.time", return_value=now)
     cache = MemoryCache()
     oidc = OpenIdConnect(
@@ -500,8 +626,8 @@ def test_oidc_does_not_return_new_token_inside_expiration_margin(mocker):
     """Test that a newly fetched token inside the margin is unusable."""
     now = 1_000.0
     mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
-        return_value="short-lived-token",
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
+        return_value=_client_secret_token_result("short-lived-token"),
     )
     mocker.patch("axa_fr_oidc.oidc.openid_connect.time.time", return_value=now)
     cache = MemoryCache()
@@ -519,8 +645,8 @@ def test_oidc_does_not_return_new_token_inside_expiration_margin(mocker):
 def test_oidc_get_token_returns_none_on_validation_failure(mocker):
     """Test that _get_token returns None when validation fails."""
     mocker.patch(
-        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token",
-        return_value="invalid-token",
+        "axa_fr_oidc.oidc.openid_connect._get_client_secret_access_token_result",
+        return_value=_client_secret_token_result("invalid-token"),
     )
 
     oidc = OpenIdConnect(FakeBadAuthentication(), MemoryCache(), str(uuid.uuid4()), "secret")

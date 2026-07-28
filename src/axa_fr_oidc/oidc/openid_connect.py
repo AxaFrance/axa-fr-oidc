@@ -4,6 +4,7 @@ import abc
 import math
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 import jwt  # PyJWT
@@ -25,6 +26,14 @@ from axa_fr_oidc.constants import (
 )
 from axa_fr_oidc.memory_cache.memory_cache import IMemoryCache
 from axa_fr_oidc.oidc.oidc_authentication import AuthenticationResult, IOidcAuthentication
+
+
+@dataclass(frozen=True)
+class _ClientSecretAccessTokenResult:
+    """Access token with the client-secret authentication method that produced it."""
+
+    access_token: str
+    auth_method: str
 
 
 def _get_private_key_access_token(
@@ -127,6 +136,25 @@ def _get_client_secret_access_token(
         HTTPError: If the token request fails with the chosen (and fallback) method.
         ValueError: If an unsupported ``auth_method`` is supplied.
     """
+    return _get_client_secret_access_token_result(
+        token_endpoint,
+        client_id,
+        client_secret,
+        scopes,
+        auth_method,
+        algorithm,
+    ).access_token
+
+
+def _get_client_secret_access_token_result(
+    token_endpoint: str,
+    client_id: str,
+    client_secret: str,
+    scopes: list[str],
+    auth_method: str = CLIENT_SECRET_AUTH_METHOD_JWT,
+    algorithm: str = DEFAULT_JWT_CLIENTSECRET_ALGORITHM,
+) -> _ClientSecretAccessTokenResult:
+    """Get an access token and the client-secret authentication method that succeeded."""
     scope_str = " ".join(scopes)
 
     if auth_method == CLIENT_SECRET_AUTH_METHOD_JWT:
@@ -161,7 +189,7 @@ def _get_client_secret_access_token(
         # If the AS does not have client_secret_jwt enabled for this client it
         # returns 401.  Fall back transparently to client_secret_post.
         if response.status_code == 401:
-            return _get_client_secret_access_token(
+            return _get_client_secret_access_token_result(
                 token_endpoint,
                 client_id,
                 client_secret,
@@ -203,7 +231,10 @@ def _get_client_secret_access_token(
 
     response.raise_for_status()
     token_response = response.json()
-    return token_response["access_token"]  # type: ignore[no-any-return]
+    return _ClientSecretAccessTokenResult(
+        access_token=str(token_response["access_token"]),
+        auth_method=auth_method,
+    )
 
 
 def _get_access_token(
@@ -300,7 +331,8 @@ class OpenIdConnect(IOpenIdConnect):
             One of ``"client_secret_jwt"``, ``"client_secret_post"``, or
             ``"client_secret_basic"``.  When ``"client_secret_jwt"`` is used
             and the server returns 401, the function automatically falls back
-            to ``"client_secret_post"``.
+            to ``"client_secret_post"`` and reuses it for later token renewals
+            in the same instance.
         authentication: The OIDC authentication handler.
         memory_cache: Cache for storing tokens.
     """
@@ -328,7 +360,9 @@ class OpenIdConnect(IOpenIdConnect):
                 Ignored when using client_secret (always HS256 for JWT method).
             auth_method: The authentication method to use with ``client_secret``.
                 One of ``"client_secret_jwt"`` (default), ``"client_secret_post"``,
-                or ``"client_secret_basic"``.
+                or ``"client_secret_basic"``. A successful fallback from
+                ``"client_secret_jwt"`` to ``"client_secret_post"`` becomes the
+                effective method for later token renewals in the same instance.
             token_expiration_margin_seconds: Number of seconds before the JWT
                 ``exp`` claim when a cached access token is considered expired.
                 Defaults to 90 seconds. Set to 0 to disable early expiration.
@@ -429,13 +463,15 @@ class OpenIdConnect(IOpenIdConnect):
                 self.algorithm,
             )
         elif self.client_secret is not None:
-            access_token = _get_client_secret_access_token(
+            token_result = _get_client_secret_access_token_result(
                 token_endpoint,
                 self.client_id,
                 self.client_secret,
                 self.authentication.get_scopes(),
                 auth_method=self.auth_method,
             )
+            access_token = token_result.access_token
+            self.auth_method = token_result.auth_method
         else:
             raise ValueError("Either client_secret or private_key must be provided.")
 

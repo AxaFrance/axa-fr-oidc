@@ -286,9 +286,14 @@ token endpoint via the `auth_method` parameter.
 
 | `auth_method` | Behaviour |
 |---|---|
-| `"client_secret_jwt"` *(default)* | Signs an HS256 JWT assertion (RFC 7523). **Automatically falls back to `client_secret_post` on 401** if the server does not have this method enabled for the client. |
+| `"client_secret_jwt"` *(default)* | Signs an HS256 JWT assertion (RFC 7523). **Automatically falls back to `client_secret_post` on 401** if the server does not have this method enabled for the client, then reuses `client_secret_post` for later renewals in the same client instance. |
 | `"client_secret_post"` | Sends `client_id` + `client_secret` in the POST body. Broadly supported. |
 | `"client_secret_basic"` | Sends credentials as an HTTP Basic Auth header. Broadly supported. |
+
+After a successful automatic fallback, the retrieved access token is still cached
+normally. When that token must be renewed later, the same `OidcClient`/
+`OpenIdConnect` instance skips the failing JWT round-trip and directly uses
+`client_secret_post`.
 
 ```python
 from axa_fr_oidc import OidcClient

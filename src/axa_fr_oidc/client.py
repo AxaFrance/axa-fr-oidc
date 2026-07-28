@@ -110,7 +110,8 @@ class OidcClient:
                 One of ``"client_secret_jwt"`` (default), ``"client_secret_post"``,
                 or ``"client_secret_basic"``.  When ``"client_secret_jwt"`` is
                 used and the server returns 401, the library automatically falls
-                back to ``"client_secret_post"``.
+                back to ``"client_secret_post"`` and reuses it for later token
+                renewals in the same internal OpenID Connect instance.
             http_service: Custom HTTP service for requests. If None, a default
                 httpx-based service is created.
             memory_cache: Custom cache implementation. If None, a default
