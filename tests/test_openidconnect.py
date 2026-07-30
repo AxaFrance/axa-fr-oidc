@@ -5,7 +5,11 @@ import pytest
 import requests
 from requests_oauth2client import BearerToken
 
-from axa_fr_oidc.constants import CLIENT_SECRET_AUTH_METHOD_JWT, CLIENT_SECRET_AUTH_METHOD_POST
+from axa_fr_oidc.constants import (
+    CLIENT_ASSERTION_TYPE_JWT_BEARER,
+    CLIENT_SECRET_AUTH_METHOD_JWT,
+    CLIENT_SECRET_AUTH_METHOD_POST,
+)
 from axa_fr_oidc.memory_cache.memory_cache import MemoryCache
 from axa_fr_oidc.oidc.openid_connect import (
     OpenIdConnect,
@@ -178,6 +182,54 @@ def test_oidc_token_exchange(mocker):
 
     assert result == mock_bearer
     mock_oauth2_client.token_exchange.assert_called_once()
+
+
+def test_oidc_token_exchange_adds_client_assertion_for_client_secret_jwt(mocker):
+    """Test that token exchange includes JWT client assertion parameters when configured."""
+    oidc = OpenIdConnect(
+        FakeAuthentication(),
+        MemoryCache(),
+        "client-id",
+        "client-secret",
+        auth_method=CLIENT_SECRET_AUTH_METHOD_JWT,
+    )
+
+    mock_bearer = BearerToken("exchanged_token")
+    mock_oauth2_client = mocker.Mock()
+    mock_oauth2_client.token_exchange.return_value = mock_bearer
+    oidc._oauth2client = mock_oauth2_client
+
+    _ = oidc.token_exchange(subject_token="subject_token")
+
+    kwargs = mock_oauth2_client.token_exchange.call_args.kwargs
+    assert kwargs["client_id"] == "client-id"
+    assert kwargs["client_assertion_type"] == CLIENT_ASSERTION_TYPE_JWT_BEARER
+    assertion = kwargs["client_assertion"]
+    claims = jwt.decode(assertion, "client-secret", algorithms=["HS256"], audience="https://test/token")
+    assert claims["iss"] == "client-id"
+    assert claims["sub"] == "client-id"
+
+
+def test_oidc_token_exchange_adds_post_credentials_for_client_secret_post(mocker):
+    """Test that token exchange sends client_secret_post credentials in request body."""
+    oidc = OpenIdConnect(
+        FakeAuthentication(),
+        MemoryCache(),
+        "client-id",
+        "client-secret",
+        auth_method=CLIENT_SECRET_AUTH_METHOD_POST,
+    )
+
+    mock_bearer = BearerToken("exchanged_token")
+    mock_oauth2_client = mocker.Mock()
+    mock_oauth2_client.token_exchange.return_value = mock_bearer
+    oidc._oauth2client = mock_oauth2_client
+
+    _ = oidc.token_exchange(subject_token="subject_token")
+
+    kwargs = mock_oauth2_client.token_exchange.call_args.kwargs
+    assert kwargs["client_id"] == "client-id"
+    assert kwargs["client_secret"] == "client-secret"
 
 
 def test_oidc_get_oauth2_client_cached():

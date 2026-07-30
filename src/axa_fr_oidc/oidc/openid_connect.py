@@ -404,6 +404,62 @@ class OpenIdConnect(IOpenIdConnect):
             )
         return self._oauth2client
 
+    @staticmethod
+    def _build_client_assertion(
+        token_endpoint: str,
+        client_id: str,
+        signing_key: str,
+        algorithm: str,
+    ) -> str:
+        """Build an RFC 7523 JWT client assertion for token endpoint auth."""
+        now = int(time.time())
+        payload: dict[str, Any] = {
+            "iss": client_id,
+            "sub": client_id,
+            "aud": token_endpoint,
+            "jti": str(uuid.uuid4()),
+            "iat": now,
+            "exp": now + DEFAULT_JWT_EXPIRATION_SECONDS,
+        }
+        return str(jwt.encode(payload, signing_key, algorithm=algorithm))
+
+    def _build_token_exchange_auth_kwargs(self, token_endpoint: str) -> dict[str, Any]:
+        """Build auth-related token-exchange parameters from configured client auth."""
+        if self.private_key is not None:
+            return {
+                "client_id": self.client_id,
+                "client_assertion_type": CLIENT_ASSERTION_TYPE_JWT_BEARER,
+                "client_assertion": self._build_client_assertion(
+                    token_endpoint,
+                    self.client_id,
+                    self.private_key,
+                    self.algorithm,
+                ),
+            }
+
+        if self.client_secret is None:
+            raise ValueError("Either client_secret or private_key must be provided.")
+
+        if self.auth_method == CLIENT_SECRET_AUTH_METHOD_JWT:
+            return {
+                "client_id": self.client_id,
+                "client_assertion_type": CLIENT_ASSERTION_TYPE_JWT_BEARER,
+                "client_assertion": self._build_client_assertion(
+                    token_endpoint,
+                    self.client_id,
+                    self.client_secret,
+                    DEFAULT_JWT_CLIENTSECRET_ALGORITHM,
+                ),
+            }
+
+        if self.auth_method == CLIENT_SECRET_AUTH_METHOD_POST:
+            return {
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+            }
+
+        return {}
+
     def _get_cache_key(self, token_endpoint: str) -> tuple[str, ...]:
         """Build a deterministic key for the token request and validation context."""
         audience = self.authentication.api_audience or ""
@@ -567,6 +623,10 @@ class OpenIdConnect(IOpenIdConnect):
 
         """
         oauth2client = self._get_oauth2_client()
+        token_endpoint = self.authentication.get_token_endpoint()
+        auth_kwargs = self._build_token_exchange_auth_kwargs(token_endpoint)
+        for key, value in auth_kwargs.items():
+            token_kwargs.setdefault(key, value)
 
         return oauth2client.token_exchange(
             subject_token=subject_token,
