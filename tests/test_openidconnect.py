@@ -1,12 +1,15 @@
+import base64
 import uuid
+from urllib.parse import parse_qs
 
 import jwt
 import pytest
 import requests
-from requests_oauth2client import BearerToken
+from requests_oauth2client import BearerToken, InvalidClient
 
 from axa_fr_oidc.constants import (
     CLIENT_ASSERTION_TYPE_JWT_BEARER,
+    CLIENT_SECRET_AUTH_METHOD_BASIC,
     CLIENT_SECRET_AUTH_METHOD_JWT,
     CLIENT_SECRET_AUTH_METHOD_POST,
 )
@@ -64,6 +67,32 @@ def _mock_jwt_fallback_to_post(monkeypatch, post_status_code: int = 200) -> list
 
     monkeypatch.setattr(requests, "post", fake_post)
     return calls
+
+
+def _prepare_token_exchange_request_body(oidc: OpenIdConnect) -> tuple[dict[str, list[str]], dict[str, str]]:
+    token_endpoint = oidc.authentication.get_token_endpoint()
+    auth_kwargs = oidc._build_token_exchange_auth_kwargs(token_endpoint)
+    prepared_request = requests.Request(
+        "POST",
+        token_endpoint,
+        data={"grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", **auth_kwargs},
+        auth=oidc._get_oauth2_client().auth,
+    ).prepare()
+    request_body = prepared_request.body.decode() if isinstance(prepared_request.body, bytes) else prepared_request.body
+    return parse_qs(request_body or "", keep_blank_values=True), dict(prepared_request.headers)
+
+
+def _set_mock_oauth2_client(oidc: OpenIdConnect, mock_oauth2_client) -> None:
+    token_endpoint = oidc.authentication.get_token_endpoint()
+    cache_auth_method = oidc.auth_method if oidc.client_secret is not None else "private_key"
+    oidc._oauth2client = mock_oauth2_client
+    oidc._oauth2client_cache_key = (token_endpoint, cache_auth_method)
+
+
+def _invalid_client_error(status_code: int) -> InvalidClient:
+    response = requests.Response()
+    response.status_code = status_code
+    return InvalidClient(response=response, client=object(), error="invalid_client")
 
 
 @pytest.mark.asyncio
@@ -172,7 +201,7 @@ def test_oidc_token_exchange(mocker):
     mock_oauth2_client = mocker.Mock()
     mock_oauth2_client.token_exchange.return_value = mock_bearer
 
-    oidc._oauth2client = mock_oauth2_client
+    _set_mock_oauth2_client(oidc, mock_oauth2_client)
 
     result = oidc.token_exchange(
         subject_token="subject_token",
@@ -197,7 +226,7 @@ def test_oidc_token_exchange_adds_client_assertion_for_client_secret_jwt(mocker)
     mock_bearer = BearerToken("exchanged_token")
     mock_oauth2_client = mocker.Mock()
     mock_oauth2_client.token_exchange.return_value = mock_bearer
-    oidc._oauth2client = mock_oauth2_client
+    _set_mock_oauth2_client(oidc, mock_oauth2_client)
 
     _ = oidc.token_exchange(subject_token="subject_token")
 
@@ -208,6 +237,85 @@ def test_oidc_token_exchange_adds_client_assertion_for_client_secret_jwt(mocker)
     claims = jwt.decode(assertion, "client-secret", algorithms=["HS256"], audience="https://test/token")
     assert claims["iss"] == "client-id"
     assert claims["sub"] == "client-id"
+
+
+def test_oidc_token_exchange_client_secret_jwt_request_does_not_send_client_secret():
+    """Test that client_secret_jwt token exchange does not also send client_secret_post credentials."""
+    oidc = OpenIdConnect(
+        FakeAuthentication(),
+        MemoryCache(),
+        "client-id",
+        "client-secret",
+        auth_method=CLIENT_SECRET_AUTH_METHOD_JWT,
+    )
+
+    body, headers = _prepare_token_exchange_request_body(oidc)
+
+    assert body["client_id"] == ["client-id"]
+    assert body["client_assertion_type"] == [CLIENT_ASSERTION_TYPE_JWT_BEARER]
+    assert "client_assertion" in body
+    assert "client_secret" not in body
+    assert "Authorization" not in headers
+
+
+def test_oidc_token_exchange_falls_back_to_post_after_jwt_invalid_client(mocker):
+    """Test that token exchange falls back to client_secret_post after a JWT 401 invalid_client."""
+    oidc = OpenIdConnect(
+        FakeAuthentication(),
+        MemoryCache(),
+        "client-id",
+        "client-secret",
+        auth_method=CLIENT_SECRET_AUTH_METHOD_JWT,
+    )
+
+    mock_bearer = BearerToken("exchanged_token")
+    mock_oauth2_client = mocker.Mock()
+    mock_oauth2_client.token_exchange.side_effect = [_invalid_client_error(401), mock_bearer]
+    mocker.patch.object(oidc, "_get_oauth2_client", return_value=mock_oauth2_client)
+
+    result = oidc.token_exchange(
+        subject_token="subject_token",
+        subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+    )
+
+    assert result == mock_bearer
+    assert oidc.auth_method == CLIENT_SECRET_AUTH_METHOD_POST
+    assert mock_oauth2_client.token_exchange.call_count == 2
+
+    first_kwargs = mock_oauth2_client.token_exchange.call_args_list[0].kwargs
+    assert first_kwargs["client_id"] == "client-id"
+    assert first_kwargs["client_assertion_type"] == CLIENT_ASSERTION_TYPE_JWT_BEARER
+    assert "client_assertion" in first_kwargs
+    assert "client_secret" not in first_kwargs
+
+    second_kwargs = mock_oauth2_client.token_exchange.call_args_list[1].kwargs
+    assert second_kwargs["client_id"] == "client-id"
+    assert second_kwargs["client_secret"] == "client-secret"
+    assert "client_assertion" not in second_kwargs
+
+
+def test_oidc_token_exchange_does_not_fallback_after_non_401_invalid_client(mocker):
+    """Test that token exchange only falls back to client_secret_post on 401 invalid_client."""
+    oidc = OpenIdConnect(
+        FakeAuthentication(),
+        MemoryCache(),
+        "client-id",
+        "client-secret",
+        auth_method=CLIENT_SECRET_AUTH_METHOD_JWT,
+    )
+
+    mock_oauth2_client = mocker.Mock()
+    mock_oauth2_client.token_exchange.side_effect = _invalid_client_error(400)
+    mocker.patch.object(oidc, "_get_oauth2_client", return_value=mock_oauth2_client)
+
+    with pytest.raises(InvalidClient):
+        oidc.token_exchange(
+            subject_token="subject_token",
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+        )
+
+    assert oidc.auth_method == CLIENT_SECRET_AUTH_METHOD_JWT
+    assert mock_oauth2_client.token_exchange.call_count == 1
 
 
 def test_oidc_token_exchange_adds_post_credentials_for_client_secret_post(mocker):
@@ -223,13 +331,64 @@ def test_oidc_token_exchange_adds_post_credentials_for_client_secret_post(mocker
     mock_bearer = BearerToken("exchanged_token")
     mock_oauth2_client = mocker.Mock()
     mock_oauth2_client.token_exchange.return_value = mock_bearer
-    oidc._oauth2client = mock_oauth2_client
+    _set_mock_oauth2_client(oidc, mock_oauth2_client)
 
     _ = oidc.token_exchange(subject_token="subject_token")
 
     kwargs = mock_oauth2_client.token_exchange.call_args.kwargs
     assert kwargs["client_id"] == "client-id"
     assert kwargs["client_secret"] == "client-secret"
+
+
+def test_oidc_token_exchange_client_secret_post_request_sends_body_credentials():
+    """Test that client_secret_post token exchange sends credentials only in the request body."""
+    oidc = OpenIdConnect(
+        FakeAuthentication(),
+        MemoryCache(),
+        "client-id",
+        "client-secret",
+        auth_method=CLIENT_SECRET_AUTH_METHOD_POST,
+    )
+
+    body, headers = _prepare_token_exchange_request_body(oidc)
+
+    assert body["client_id"] == ["client-id"]
+    assert body["client_secret"] == ["client-secret"]
+    assert "client_assertion" not in body
+    assert "Authorization" not in headers
+
+
+def test_oidc_token_exchange_client_secret_basic_request_sends_basic_auth():
+    """Test that client_secret_basic token exchange sends credentials only via Basic auth."""
+    oidc = OpenIdConnect(
+        FakeAuthentication(),
+        MemoryCache(),
+        "client-id",
+        "client-secret",
+        auth_method=CLIENT_SECRET_AUTH_METHOD_BASIC,
+    )
+
+    body, headers = _prepare_token_exchange_request_body(oidc)
+
+    assert "client_id" not in body
+    assert "client_secret" not in body
+    assert "client_assertion" not in body
+    expected_credentials = base64.b64encode(b"client-id:client-secret").decode()
+    assert headers["Authorization"] == f"Basic {expected_credentials}"
+
+
+def test_oidc_token_exchange_raises_for_unsupported_auth_method():
+    """Test that token exchange rejects unsupported client secret authentication methods."""
+    oidc = OpenIdConnect(
+        FakeAuthentication(),
+        MemoryCache(),
+        "client-id",
+        "client-secret",
+        auth_method="unsupported",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported auth_method"):
+        oidc.token_exchange(subject_token="subject-token")
 
 
 def test_oidc_get_oauth2_client_cached():
