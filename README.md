@@ -284,6 +284,10 @@ token = client.get_access_token()
 When using `client_secret`, you can control how the credentials are sent to the
 token endpoint via the `auth_method` parameter.
 
+This setting affects token retrieval (`get_access_token()` /
+`get_access_token_async()`) and RFC 8693 token exchange (`token_exchange()`). It
+does not affect token validation.
+
 | `auth_method` | Behaviour |
 |---|---|
 | `"client_secret_jwt"` *(default)* | Signs an HS256 JWT assertion (RFC 7523). **Automatically falls back to `client_secret_post` on 401** if the server does not have this method enabled for the client, then reuses `client_secret_post` for later renewals in the same client instance. |
@@ -293,7 +297,10 @@ token endpoint via the `auth_method` parameter.
 After a successful automatic fallback, the retrieved access token is still cached
 normally. When that token must be renewed later, the same `OidcClient`/
 `OpenIdConnect` instance skips the failing JWT round-trip and directly uses
-`client_secret_post`.
+`client_secret_post`. The same effective method is reused by later
+`token_exchange()` calls. If `token_exchange()` itself receives a 401
+`invalid_client` response while using `client_secret_jwt`, it also retries once
+with `client_secret_post`.
 
 ```python
 from axa_fr_oidc import OidcClient

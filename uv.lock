@@ -27,7 +27,7 @@ wheels = [
 
 [[package]]
 name = "axa-fr-oidc"
-version = "2.1.1"
+version = "2.1.4"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

@@ -9,7 +9,7 @@ from typing import Any
 
 import jwt  # PyJWT
 import requests
-from requests_oauth2client import BearerToken, IdToken, OAuth2Client
+from requests_oauth2client import BearerToken, ClientSecretBasic, IdToken, InvalidClient, OAuth2Client
 
 from axa_fr_oidc.constants import (
     CLIENT_ASSERTION_TYPE_JWT_BEARER,
@@ -388,6 +388,24 @@ class OpenIdConnect(IOpenIdConnect):
         self.authentication = authentication
         self.memory_cache = memory_cache
         self._oauth2client: OAuth2Client | None = None
+        self._oauth2client_cache_key: tuple[str, str] | None = None
+
+    def _get_oauth2_client_auth(self) -> str | ClientSecretBasic:
+        """Build the OAuth2Client auth handler used by token-exchange requests."""
+        if self.client_secret is None:
+            return self.client_id
+
+        if self.auth_method in {CLIENT_SECRET_AUTH_METHOD_JWT, CLIENT_SECRET_AUTH_METHOD_POST}:
+            return self.client_id
+
+        if self.auth_method == CLIENT_SECRET_AUTH_METHOD_BASIC:
+            return ClientSecretBasic(self.client_id, self.client_secret)
+
+        raise ValueError(
+            f"Unsupported auth_method '{self.auth_method}'. "
+            f"Expected one of: '{CLIENT_SECRET_AUTH_METHOD_JWT}', "
+            f"'{CLIENT_SECRET_AUTH_METHOD_POST}', '{CLIENT_SECRET_AUTH_METHOD_BASIC}'."
+        )
 
     def _get_oauth2_client(self) -> OAuth2Client:
         """Get or create a shared OAuth2Client instance.
@@ -396,13 +414,91 @@ class OpenIdConnect(IOpenIdConnect):
             OAuth2Client: A configured OAuth2Client instance for this OpenIdConnect instance.
 
         """
-        if self._oauth2client is None:
-            token_endpoint = self.authentication.get_token_endpoint()
+        token_endpoint = self.authentication.get_token_endpoint()
+        cache_key = (token_endpoint, self.auth_method if self.client_secret is not None else "private_key")
+
+        if self._oauth2client is None or self._oauth2client_cache_key != cache_key:
             self._oauth2client = OAuth2Client(
                 token_endpoint=token_endpoint,
-                auth=(self.client_id, self.client_secret) if self.client_secret else self.client_id,
+                auth=self._get_oauth2_client_auth(),
             )
+            self._oauth2client_cache_key = cache_key
         return self._oauth2client
+
+    @staticmethod
+    def _build_client_assertion(
+        token_endpoint: str,
+        client_id: str,
+        signing_key: str,
+        algorithm: str,
+    ) -> str:
+        """Build an RFC 7523 JWT client assertion for token endpoint auth."""
+        now = int(time.time())
+        payload: dict[str, Any] = {
+            "iss": client_id,
+            "sub": client_id,
+            "aud": token_endpoint,
+            "jti": str(uuid.uuid4()),
+            "iat": now,
+            "exp": now + DEFAULT_JWT_EXPIRATION_SECONDS,
+        }
+        return str(jwt.encode(payload, signing_key, algorithm=algorithm))
+
+    def _build_token_exchange_auth_kwargs(self, token_endpoint: str) -> dict[str, Any]:
+        """Build auth-related token-exchange parameters from configured client auth."""
+        if self.private_key is not None:
+            return {
+                "client_id": self.client_id,
+                "client_assertion_type": CLIENT_ASSERTION_TYPE_JWT_BEARER,
+                "client_assertion": self._build_client_assertion(
+                    token_endpoint,
+                    self.client_id,
+                    self.private_key,
+                    self.algorithm,
+                ),
+            }
+
+        if self.client_secret is None:
+            raise ValueError("Either client_secret or private_key must be provided.")
+
+        if self.auth_method == CLIENT_SECRET_AUTH_METHOD_JWT:
+            return {
+                "client_id": self.client_id,
+                "client_assertion_type": CLIENT_ASSERTION_TYPE_JWT_BEARER,
+                "client_assertion": self._build_client_assertion(
+                    token_endpoint,
+                    self.client_id,
+                    self.client_secret,
+                    DEFAULT_JWT_CLIENTSECRET_ALGORITHM,
+                ),
+            }
+
+        if self.auth_method == CLIENT_SECRET_AUTH_METHOD_POST:
+            return {
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+            }
+
+        if self.auth_method == CLIENT_SECRET_AUTH_METHOD_BASIC:
+            return {}
+
+        raise ValueError(
+            f"Unsupported auth_method '{self.auth_method}'. "
+            f"Expected one of: '{CLIENT_SECRET_AUTH_METHOD_JWT}', "
+            f"'{CLIENT_SECRET_AUTH_METHOD_POST}', '{CLIENT_SECRET_AUTH_METHOD_BASIC}'."
+        )
+
+    def _build_token_exchange_request_kwargs(
+        self,
+        token_endpoint: str,
+        token_kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Build token-exchange request parameters without mutating caller-provided kwargs."""
+        request_token_kwargs = dict(token_kwargs)
+        auth_kwargs = self._build_token_exchange_auth_kwargs(token_endpoint)
+        for key, value in auth_kwargs.items():
+            request_token_kwargs.setdefault(key, value)
+        return request_token_kwargs
 
     def _get_cache_key(self, token_endpoint: str) -> tuple[str, ...]:
         """Build a deterministic key for the token request and validation context."""
@@ -535,6 +631,11 @@ class OpenIdConnect(IOpenIdConnect):
         which is useful for scenarios like service-to-service authentication, token delegation,
         and impersonation.
 
+        When ``client_secret_jwt`` is configured and the authorization server
+        rejects that method with a 401 ``invalid_client`` response, this method
+        falls back to ``client_secret_post`` and reuses it for later calls in the
+        same instance.
+
         Args:
             subject_token: The subject token to exchange for a new token. Can be a string,
                 BearerToken, or IdToken.
@@ -554,6 +655,7 @@ class OpenIdConnect(IOpenIdConnect):
         Raises:
             UnknownSubjectTokenType: If the type of subject_token cannot be determined automatically.
             UnknownActorTokenType: If the type of actor_token cannot be determined automatically.
+            InvalidClient: If client authentication fails without an applicable fallback.
 
         Example:
             ```python
@@ -566,7 +668,53 @@ class OpenIdConnect(IOpenIdConnect):
             ```
 
         """
+        token_endpoint = self.authentication.get_token_endpoint()
+
+        try:
+            return self._token_exchange_with_current_auth(
+                token_endpoint=token_endpoint,
+                subject_token=subject_token,
+                subject_token_type=subject_token_type,
+                actor_token=actor_token,
+                actor_token_type=actor_token_type,
+                requested_token_type=requested_token_type,
+                requests_kwargs=requests_kwargs,
+                token_kwargs=token_kwargs,
+            )
+        except InvalidClient as exc:
+            if (
+                self.client_secret is None
+                or self.auth_method != CLIENT_SECRET_AUTH_METHOD_JWT
+                or exc.response.status_code != 401
+            ):
+                raise
+
+            self.auth_method = CLIENT_SECRET_AUTH_METHOD_POST
+            return self._token_exchange_with_current_auth(
+                token_endpoint=token_endpoint,
+                subject_token=subject_token,
+                subject_token_type=subject_token_type,
+                actor_token=actor_token,
+                actor_token_type=actor_token_type,
+                requested_token_type=requested_token_type,
+                requests_kwargs=requests_kwargs,
+                token_kwargs=token_kwargs,
+            )
+
+    def _token_exchange_with_current_auth(
+        self,
+        token_endpoint: str,
+        subject_token: str | BearerToken | IdToken,
+        subject_token_type: str | None,
+        actor_token: str | BearerToken | IdToken | None,
+        actor_token_type: str | None,
+        requested_token_type: str | None,
+        requests_kwargs: dict[str, Any] | None,
+        token_kwargs: dict[str, Any],
+    ) -> BearerToken:
+        """Exchange a token using the current client authentication method."""
         oauth2client = self._get_oauth2_client()
+        request_token_kwargs = self._build_token_exchange_request_kwargs(token_endpoint, token_kwargs)
 
         return oauth2client.token_exchange(
             subject_token=subject_token,
@@ -575,5 +723,5 @@ class OpenIdConnect(IOpenIdConnect):
             actor_token_type=actor_token_type,
             requested_token_type=requested_token_type,
             requests_kwargs=requests_kwargs,
-            **token_kwargs,
+            **request_token_kwargs,
         )

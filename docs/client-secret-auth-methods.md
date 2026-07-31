@@ -10,6 +10,10 @@ the token endpoint. The OAuth2 specification (and RFC 7523) defines several ways
 do this. The method to use is controlled by the `auth_method` parameter on both
 `OidcClient` and `OpenIdConnect`.
 
+`auth_method` affects token retrieval (`get_access_token()` and
+`get_access_token_async()`) and RFC 8693 token exchange (`token_exchange()`). It
+does not affect token validation.
+
 | `auth_method` constant | Value | Description |
 |---|---|---|
 | `CLIENT_SECRET_AUTH_METHOD_JWT` | `"client_secret_jwt"` | Signs a JWT assertion with the secret (HS256). Most secure; requires server-side registration per client. **Default.** |
@@ -33,7 +37,10 @@ client_secret_jwt  ──(401)──►  client_secret_post  ──(success)─�
 After a successful fallback, the access token is cached normally. The same
 `OidcClient`/`OpenIdConnect` instance also remembers that `client_secret_post`
 succeeded, so later token renewals skip the failing JWT attempt and avoid
-repeating the initial 401.
+repeating the initial 401. Later `token_exchange()` calls reuse the same
+effective method. If `token_exchange()` itself receives a 401 `invalid_client`
+response while using `client_secret_jwt`, it also retries once with
+`client_secret_post`.
 
 If you already know which method your server supports, set it explicitly to avoid
 the extra round-trip.
