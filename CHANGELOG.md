@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `validate_token()` and `validate_token_async()` have been removed; use
     `OidcValidator.validate_token()` / `validate_token_async()` instead
     (#14).
+- Expanded declared Python support to include Python 3.14 and 3.15.
 
 ## [1.4.6]
 

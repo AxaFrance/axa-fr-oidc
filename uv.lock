@@ -1,6 +1,6 @@
 version = 1
 revision = 3
-requires-python = ">=3.10, <3.13"
+requires-python = ">=3.10, <3.16"
 
 [[package]]
 name = "anyio"
@@ -27,7 +27,7 @@ wheels = [
 
 [[package]]
 name = "axa-fr-oidc"
-version = "2.1.4"
+version = "2.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
