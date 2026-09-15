@@ -10,6 +10,8 @@
 
 A Python library for OpenID Connect (OIDC) authentication with DPoP (Demonstrating Proof-of-Possession) support, featuring JWT validation, token caching, and both sync/async operations.
 
+Supported Python versions: **3.10 to 3.15**.
+
 ## Table of Contents (ToC)
 
 - [Table of Contents (ToC)](#table-of-contents-toc)
