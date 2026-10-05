@@ -89,6 +89,7 @@ class OidcClient:
         timeout: float | None = None,
         issuer_cache_expiration_seconds: int = DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
         token_expiration_margin_seconds: int = DEFAULT_TOKEN_EXPIRATION_MARGIN_SECONDS,
+        discovery_issuer: str | None = None,
     ) -> None:
         """Initialize the OIDC client.
 
@@ -131,6 +132,9 @@ class OidcClient:
                 ``exp`` claim when a cached access token is considered expired.
                 Defaults to DEFAULT_TOKEN_EXPIRATION_MARGIN_SECONDS (90 seconds).
                 Set to 0 to disable early expiration.
+            discovery_issuer: Optional issuer base URL used only for OIDC
+                discovery. Defaults to ``issuer``. The ``issuer`` parameter
+                remains the expected JWT ``iss`` value.
 
         Raises:
             ValueError: If token_expiration_margin_seconds is negative.
@@ -151,6 +155,7 @@ class OidcClient:
         self.timeout = timeout
         self.issuer_cache_expiration_seconds = issuer_cache_expiration_seconds
         self.token_expiration_margin_seconds = token_expiration_margin_seconds
+        self.discovery_issuer = discovery_issuer
 
         # Lazy initialization for HTTP clients
         self._http_client: Client | None = None
@@ -213,6 +218,7 @@ class OidcClient:
                 memory_cache=self.memory_cache,
                 algorithms=self.algorithms,
                 issuer_cache_expiration_seconds=self.issuer_cache_expiration_seconds,
+                discovery_issuer=self.discovery_issuer,
             )
         return self._authentication
 

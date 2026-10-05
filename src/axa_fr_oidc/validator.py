@@ -83,6 +83,7 @@ class OidcValidator:
         timeout: float | None = None,
         issuer_cache_expiration_seconds: int = DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
         handle_validation: Callable[[dict[str, Any]], HandleValidationResult] | None = None,
+        discovery_issuer: str | None = None,
     ) -> None:
         """Initialize the OIDC validator.
 
@@ -115,6 +116,9 @@ class OidcValidator:
                 which audience should be validated for that particular token.
                 When omitted, ``scopes`` and ``audience`` from the constructor
                 are used.
+            discovery_issuer: Optional issuer base URL used only for OIDC
+                discovery. Defaults to ``issuer``. The ``issuer`` parameter
+                remains the expected JWT ``iss`` value.
         """
         self.issuer = issuer
         self.audience = audience
@@ -125,6 +129,7 @@ class OidcValidator:
         self.timeout = timeout
         self.issuer_cache_expiration_seconds = issuer_cache_expiration_seconds
         self._handle_validation = handle_validation
+        self.discovery_issuer = discovery_issuer
 
         self._http_client: Client | None = None
         self._http_async_client: AsyncClient | None = None
@@ -184,6 +189,7 @@ class OidcValidator:
                 algorithms=self.algorithms,
                 issuer_cache_expiration_seconds=self.issuer_cache_expiration_seconds,
                 handle_validation=self._handle_validation,
+                discovery_issuer=self.discovery_issuer,
             )
         return self._authentication
 

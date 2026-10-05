@@ -199,6 +199,7 @@ class OidcAuthentication(IOidcAuthentication):
         algorithms: list[str] | None = None,
         issuer_cache_expiration_seconds: int = DEFAULT_ISSUER_CACHE_EXPIRATION_SECONDS,
         handle_validation: Callable[[dict[str, Any]], HandleValidationResult] | None = None,
+        discovery_issuer: str | None = None,
     ) -> None:
         """Initialize the OIDC authentication handler.
 
@@ -215,12 +216,16 @@ class OidcAuthentication(IOidcAuthentication):
             handle_validation: Optional callable invoked with the decoded (not yet
                 validated) token claims to determine which scopes and audience
                 should be validated. It must return a HandleValidationResult.
+            discovery_issuer: Optional issuer base URL used only for OIDC
+                discovery. Defaults to ``issuer``. Use this when the discovery
+                URL and canonical JWT ``iss`` value differ.
         """
         if algorithms is None:
             algorithms = SUPPORTED_ALGORITHMS
 
         self.service = service
         self.issuer = issuer
+        self.discovery_issuer = issuer if discovery_issuer is None else discovery_issuer
         self._api_audience = api_audience
         self.algorithms = algorithms
         self.scopes = scopes
@@ -315,7 +320,7 @@ class OidcAuthentication(IOidcAuthentication):
             return cached_jwks, cached_token_endpoint
 
         # Get it from the well-known config
-        wellknowurl = await self.service.get_async(self.issuer + OIDC_WELL_KNOWN_PATH)
+        wellknowurl = await self.service.get_async(self.discovery_issuer.rstrip("/") + OIDC_WELL_KNOWN_PATH)
         cache_jwks = await self.service.get_async(wellknowurl["jwks_uri"])
         token_endpoint: str = wellknowurl["token_endpoint"]
 
@@ -343,7 +348,7 @@ class OidcAuthentication(IOidcAuthentication):
             return cached_jwks, cached_token_endpoint
 
         # Get it from the well-known config
-        wellknowurl = self.service.get(self.issuer + OIDC_WELL_KNOWN_PATH)
+        wellknowurl = self.service.get(self.discovery_issuer.rstrip("/") + OIDC_WELL_KNOWN_PATH)
         cache_jwks = self.service.get(wellknowurl["jwks_uri"])
         token_endpoint: str = wellknowurl["token_endpoint"]
 

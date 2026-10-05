@@ -1,0 +1,89 @@
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from axa_fr_oidc import OidcClient, OidcValidator
+from axa_fr_oidc.memory_cache import MemoryCache
+from axa_fr_oidc.oidc import OidcAuthentication
+
+
+@pytest.fixture
+def discovery_response() -> dict[str, str]:
+    return {
+        "jwks_uri": "https://discovery.example/jwks",
+        "token_endpoint": "https://discovery.example/token",
+    }
+
+
+def test_authentication_uses_discovery_issuer_without_changing_validation_issuer(
+    discovery_response: dict[str, str],
+) -> None:
+    service = Mock()
+    service.get.side_effect = [discovery_response, {"keys": []}]
+    authentication = OidcAuthentication(
+        issuer="https://tokens.example/",
+        discovery_issuer="https://discovery.example/",
+        scopes=[],
+        api_audience=None,
+        service=service,
+        memory_cache=MemoryCache(),
+    )
+
+    authentication._get_jwks()
+
+    assert authentication.issuer == "https://tokens.example/"
+    service.get.assert_any_call("https://discovery.example/.well-known/openid-configuration")
+
+
+@pytest.mark.asyncio
+async def test_authentication_uses_discovery_issuer_asynchronously(
+    discovery_response: dict[str, str],
+) -> None:
+    service = Mock()
+    service.get_async = AsyncMock(side_effect=[discovery_response, {"keys": []}])
+    authentication = OidcAuthentication(
+        issuer="https://tokens.example/",
+        discovery_issuer="https://discovery.example/",
+        scopes=[],
+        api_audience=None,
+        service=service,
+        memory_cache=MemoryCache(),
+    )
+
+    await authentication._get_jwks_async()
+
+    service.get_async.assert_any_await("https://discovery.example/.well-known/openid-configuration")
+
+
+def test_client_propagates_discovery_issuer() -> None:
+    client = OidcClient(
+        issuer="https://tokens.example/",
+        discovery_issuer="https://discovery.example",
+        client_id="client",
+        client_secret="secret",
+    )
+
+    assert client.authentication.discovery_issuer == "https://discovery.example"
+    assert client.authentication.issuer == "https://tokens.example/"
+
+
+def test_validator_propagates_discovery_issuer() -> None:
+    validator = OidcValidator(
+        issuer="https://tokens.example/",
+        discovery_issuer="https://discovery.example",
+    )
+
+    assert validator.authentication.discovery_issuer == "https://discovery.example"
+    assert validator.authentication.issuer == "https://tokens.example/"
+
+
+def test_discovery_issuer_defaults_to_validation_issuer() -> None:
+    authentication = OidcAuthentication(
+        issuer="https://tokens.example/",
+        scopes=[],
+        api_audience=None,
+        service=Mock(),
+        memory_cache=MemoryCache(),
+    )
+
+    assert authentication.discovery_issuer == "https://tokens.example/"

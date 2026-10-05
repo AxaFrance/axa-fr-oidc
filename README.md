@@ -122,7 +122,23 @@ else:
 client.close_sync()
 validator.close_sync()
 ```
+When discovery metadata is hosted under a different base URL than the
+canonical JWT `iss` value, set `discovery_issuer` explicitly. `issuer` remains
+the expected value used for token validation:
 
+```python
+client = OidcClient(
+    issuer="https://tokens.example.com/",
+    discovery_issuer="https://discovery.example.com",
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+)
+validator = OidcValidator(
+    issuer="https://tokens.example.com/",
+    discovery_issuer="https://discovery.example.com",
+    audience="your-api-audience",
+)
+```
 #### Using Context Managers
 
 ```python
