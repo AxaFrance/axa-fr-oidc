@@ -124,7 +124,7 @@ validator.close_sync()
 ```
 When discovery metadata is hosted under a different base URL than the
 canonical JWT `iss` value, set `discovery_issuer` explicitly. `issuer` remains
-the expected value used for token validation:
+the exact value used for token validation, including any trailing slash:
 
 ```python
 client = OidcClient(
@@ -139,6 +139,20 @@ validator = OidcValidator(
     audience="your-api-audience",
 )
 ```
+
+For providers such as OpenIddict that use a trailing slash in their canonical
+issuer, no workaround is required. Discovery is requested from
+`https://issuer.example/.well-known/openid-configuration`, while validation
+continues to require the exact `https://issuer.example/` value:
+
+```python
+client = OidcClient(
+    issuer="https://issuer.example/",
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+)
+```
+
 #### Using Context Managers
 
 ```python
