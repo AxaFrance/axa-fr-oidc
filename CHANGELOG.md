@@ -7,13 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-10-08
+
+### Fixed
+- Build OIDC discovery URLs with exactly one separator when the canonical JWT
+  issuer ends with `/`, while preserving that exact issuer for token validation.
+- Document and test OpenIddict-compatible trailing-slash issuers across the
+  synchronous and asynchronous discovery paths.
+
+## [2.2.0] - 2026-10-05
+
 ### Added
+- Support a separate optional `discovery_issuer` for environments where OIDC
+  discovery is reached through a different URL than the canonical JWT `iss`.
 - New `OidcValidator` class dedicated to access-token and DPoP-proof
-  validation.  It can be created with just an `issuer` (no client credentials
+  validation. It can be created with just an `issuer` (no client credentials
   required) and accepts the same flexible `handle_validation` callback as the
   underlying `OidcAuthentication` (#14).
 - `HandleValidationResult` is now re-exported from the top-level
   `axa_fr_oidc` package for ergonomic custom-validation setups.
+
+### Changed
+- Expanded declared Python support to include Python 3.14 and 3.15.
 
 ### Changed (breaking)
 - `OidcClient` is now focused exclusively on token retrieval and exchange.
@@ -23,7 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `validate_token()` and `validate_token_async()` have been removed; use
     `OidcValidator.validate_token()` / `validate_token_async()` instead
     (#14).
-- Expanded declared Python support to include Python 3.14 and 3.15.
 
 ## [1.4.6]
 
@@ -127,7 +141,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented proper timeout for HTTP requests to prevent hanging
 - Added security scanning with bandit
 
-[Unreleased]: https://github.com/axa-france/axa-fr-oidc/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/axa-france/axa-fr-oidc/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/axa-france/axa-fr-oidc/compare/v2.2.0...v2.2.1
+[2.2.0]: https://github.com/axa-france/axa-fr-oidc/compare/v1.4.6...v2.2.0
+[1.4.6]: https://github.com/axa-france/axa-fr-oidc/compare/v1.3.0...v1.4.6
 [1.3.0]: https://github.com/axa-france/axa-fr-oidc/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/axa-france/axa-fr-oidc/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/axa-france/axa-fr-oidc/compare/v1.1.0...v1.1.1

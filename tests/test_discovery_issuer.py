@@ -15,14 +15,19 @@ def discovery_response() -> dict[str, str]:
     }
 
 
+@pytest.mark.parametrize(
+    "discovery_issuer",
+    ["https://discovery.example", "https://discovery.example/"],
+)
 def test_authentication_uses_discovery_issuer_without_changing_validation_issuer(
     discovery_response: dict[str, str],
+    discovery_issuer: str,
 ) -> None:
     service = Mock()
     service.get.side_effect = [discovery_response, {"keys": []}]
     authentication = OidcAuthentication(
         issuer="https://tokens.example/",
-        discovery_issuer="https://discovery.example/",
+        discovery_issuer=discovery_issuer,
         scopes=[],
         api_audience=None,
         service=service,
@@ -32,18 +37,23 @@ def test_authentication_uses_discovery_issuer_without_changing_validation_issuer
     authentication._get_jwks()
 
     assert authentication.issuer == "https://tokens.example/"
-    service.get.assert_any_call("https://discovery.example/.well-known/openid-configuration")
+    assert service.get.call_args_list[0].args == ("https://discovery.example/.well-known/openid-configuration",)
 
 
+@pytest.mark.parametrize(
+    "discovery_issuer",
+    ["https://discovery.example", "https://discovery.example/"],
+)
 @pytest.mark.asyncio
 async def test_authentication_uses_discovery_issuer_asynchronously(
     discovery_response: dict[str, str],
+    discovery_issuer: str,
 ) -> None:
     service = Mock()
     service.get_async = AsyncMock(side_effect=[discovery_response, {"keys": []}])
     authentication = OidcAuthentication(
         issuer="https://tokens.example/",
-        discovery_issuer="https://discovery.example/",
+        discovery_issuer=discovery_issuer,
         scopes=[],
         api_audience=None,
         service=service,
@@ -52,7 +62,7 @@ async def test_authentication_uses_discovery_issuer_asynchronously(
 
     await authentication._get_jwks_async()
 
-    service.get_async.assert_any_await("https://discovery.example/.well-known/openid-configuration")
+    assert service.get_async.await_args_list[0].args == ("https://discovery.example/.well-known/openid-configuration",)
 
 
 def test_client_propagates_discovery_issuer() -> None:
@@ -87,3 +97,32 @@ def test_discovery_issuer_defaults_to_validation_issuer() -> None:
     )
 
     assert authentication.discovery_issuer == "https://tokens.example/"
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+@pytest.mark.asyncio
+async def test_trailing_slash_issuer_uses_slash_safe_discovery_url(
+    discovery_response: dict[str, str],
+    is_async: bool,
+) -> None:
+    service = Mock()
+    service.get.side_effect = [discovery_response, {"keys": []}]
+    service.get_async = AsyncMock(side_effect=[discovery_response, {"keys": []}])
+    authentication = OidcAuthentication(
+        issuer="https://openid.example/",
+        scopes=[],
+        api_audience=None,
+        service=service,
+        memory_cache=MemoryCache(),
+    )
+
+    if is_async:
+        await authentication._get_jwks_async()
+        discovery_call = service.get_async.await_args_list[0]
+    else:
+        authentication._get_jwks()
+        discovery_call = service.get.call_args_list[0]
+
+    assert authentication.issuer == "https://openid.example/"
+    assert authentication.discovery_issuer == "https://openid.example/"
+    assert discovery_call.args == ("https://openid.example/.well-known/openid-configuration",)
