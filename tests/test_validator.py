@@ -1,6 +1,11 @@
 """Tests for the OidcValidator high-level validator module."""
 
+import base64
+import json
+
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 
 import axa_fr_oidc as pkg
 from axa_fr_oidc import (
@@ -33,6 +38,79 @@ class FakeHttpService(IHttpServiceGet):
 
     async def get_async(self, url: str) -> dict:
         return self.get(url)
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("tampering", ["wrong-key", "claims", "signature"])
+@pytest.mark.asyncio
+async def test_dpop_forged_signature_is_rejected_without_consuming_jti(
+    valid_dpop_test_data, asynchronous: bool, tampering: str
+) -> None:
+    """Reject forged proofs through both public APIs before recording replay state."""
+    token, jwks, create_proof = valid_dpop_test_data
+    validator = OidcValidator(issuer="fake_issuer", audience="my-api", http_service=FakeHttpService(jwks))
+    proof = create_proof()
+    claims = jwt.decode(proof, options={"verify_signature": False})
+    if tampering == "wrong-key":
+        forged = jwt.encode(
+            claims,
+            ec.generate_private_key(ec.SECP256R1()),
+            algorithm="ES256",
+            headers=jwt.get_unverified_header(proof),
+        )
+    else:
+        parts = proof.split(".")
+        if tampering == "claims":
+            claims["iat"] -= 1
+            parts[1] = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
+        else:
+            parts[2] = ("A" if parts[2][0] != "A" else "B") + parts[2][1:]
+        forged = ".".join(parts)
+    if asynchronous:
+        invalid = await validator.validate_token_async(token, forged, "/api/resource", "GET")
+        valid = await validator.validate_token_async(token, proof, "/api/resource", "GET")
+    else:
+        invalid = validator.validate_token(token, forged, "/api/resource", "GET")
+        valid = validator.validate_token(token, proof, "/api/resource", "GET")
+    assert not invalid.success
+    assert invalid.payload is None
+    assert invalid.error == "Invalid DPoP proof signature"
+    assert valid.success
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize(
+    ("htu", "target", "expected"),
+    [
+        ("https://example.com/api/resource", "/api/resource", True),
+        ("https://example.com/api/resource?limit=1", "/api/resource", True),
+        ("https://example.com/api/resource?limit=1", "https://example.com/api/resource", True),
+        ("https://example.com/api/resource", "https://other.example/api/resource", False),
+        ("https://example.com/api/resource", "https://example.com/other", False),
+        ("https://example.com/other/api/resource", "/api/resource", False),
+        (
+            "https://attacker.example/prefixhttps://example.com/api/resource",
+            "https://example.com/api/resource",
+            False,
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_dpop_target_compares_the_uri_without_query(
+    valid_dpop_test_data, ec_key_pair, asynchronous: bool, htu: str, target: str, expected: bool
+) -> None:
+    """Match exact URI targets and support service workers that include query strings."""
+    token, jwks, create_proof = valid_dpop_test_data
+    original = create_proof()
+    claims = jwt.decode(original, options={"verify_signature": False})
+    claims["htu"] = htu
+    proof = jwt.encode(claims, ec_key_pair, algorithm="ES256", headers=jwt.get_unverified_header(original))
+    validator = OidcValidator(issuer="fake_issuer", audience="my-api", http_service=FakeHttpService(jwks))
+    if asynchronous:
+        result = await validator.validate_token_async(token, proof, target, "GET")
+    else:
+        result = validator.validate_token(token, proof, target, "GET")
+    assert result.success is expected
 
 
 class TestOidcValidatorInitialization:

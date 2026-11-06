@@ -5,7 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.1]
+
+### Fixed
+- Reject DPoP proofs when signature verification returns `False`, including
+  proofs signed by a key different from the public key in their header.
+- Compare the exact DPoP request path, not a URI suffix. When the expected
+  target is an absolute URI, also verify its scheme and authority. Ignore
+  query strings and fragments when comparing targets, as required by RFC 9449.
+- Include the separately configured OIDC discovery issuer support from #22.
+
+## [2.2.0]
 
 ### Added
 - New `OidcValidator` class dedicated to access-token and DPoP-proof

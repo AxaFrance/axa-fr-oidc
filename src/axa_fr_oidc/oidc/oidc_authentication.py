@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from jwskate import Jwk, SignedJwt
 from loguru import logger
@@ -477,7 +478,8 @@ class OidcAuthentication(IOidcAuthentication):
 
         # Build a Jwk object to verify the signature
         public_key = Jwk(jwk_header)
-        dpop_jwt.verify_signature(public_key, alg=dpop_jwt.alg)
+        if not dpop_jwt.verify_signature(public_key, alg=dpop_jwt.alg):
+            return AuthenticationResult(success=False, error="Invalid DPoP proof signature")
 
         return public_key
 
@@ -486,7 +488,7 @@ class OidcAuthentication(IOidcAuthentication):
 
         Args:
             claims: The DPoP JWT claims.
-            path: Expected request path.
+            path: Expected request URI, or path when the origin is checked separately.
             http_method: Expected HTTP method.
 
         Returns:
@@ -504,8 +506,15 @@ class OidcAuthentication(IOidcAuthentication):
                 error=f"DPoP method '{claims['htm']}' does not match '{http_method}'",
             )
 
-        # Verify (simplified) that the DPoP path contains or ends with 'path'
-        if not claims["htu"].endswith(path):
+        proof_uri = urlsplit(claims["htu"])
+        target_uri = urlsplit(path)
+        target_matches = (proof_uri.path or "/") == (target_uri.path or "/")
+        if target_uri.scheme or target_uri.netloc:
+            target_matches = target_matches and (
+                proof_uri.scheme.lower(),
+                proof_uri.netloc.lower(),
+            ) == (target_uri.scheme.lower(), target_uri.netloc.lower())
+        if not target_matches:
             return AuthenticationResult(
                 success=False,
                 error=f"DPoP path '{claims['htu']}' does not match '{path}'",

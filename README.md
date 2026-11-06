@@ -220,12 +220,22 @@ validator = OidcValidator(
 result = validator.validate_token(
     token=access_token,
     dpop=dpop_proof,
-    path="/api/resource",
+    path="https://api.example.com/api/resource",
     http_method="POST",
 )
 
 print(result.success, result.error)
 ```
+
+Both synchronous and asynchronous validation reject invalid proof signatures
+before recording their replay identifiers. Pass the public request URI as
+`path` to validate its scheme, authority and exact path. Query strings and
+fragments are excluded from target comparison. A relative path remains
+supported when the application validates the origin separately.
+
+Reuse one validator instance so its integrated in-memory cache and DPoP replay
+protection persist across requests. This state is process-local, is lost on
+restart and is not shared between replicas.
 
 #### Token Exchange
 
